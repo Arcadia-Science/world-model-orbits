@@ -1,0 +1,83 @@
+project:
+  type: website
+  render:
+  - '*.qmd'
+  - '*.ipynb'
+  - 'examples/*.ipynb'
+  - 'pages/*.qmd'
+  resources:
+  - authors.yml
+  - CITATION.cff
+execute:
+  freeze: auto
+website:
+  favicon: "_extensions/Arcadia-Science/arcadia-pub-theme/assets/logo_white.png"
+  twitter-card: true
+  open-graph: true
+  navbar:
+    collapse-below: xl
+    pinned: false
+    title: false
+    left:
+    - text: '{{< iconify qlementine-icons:version-control-16 >}}'
+      menu:
+      - text: v01 (latest)
+        href: index.ipynb
+    - text: '{{< iconify nrk:back >}} Back to Pub'
+      href: index.ipynb
+    - text: Demo
+      href: /examples/demo.html
+    right:
+    - text: FAQ
+      href: pages/FAQ.qmd
+    - text: Reproduce this pub
+      href: pages/SETUP.qmd
+    - text: Cite this pub
+      href: "#"
+    - text: Contribute
+      href: pages/CONTRIBUTING.qmd
+    tools:
+    - icon: twitter-x
+      href: https://twitter.com/arcadiascience
+    - icon: github
+      href: https://github.com/{{< var pub.org >}}/{{< var pub.repo >}}
+    logo: "_extensions/Arcadia-Science/arcadia-pub-theme/assets/logo_text.png"
+    logo-href: https://research.arcadiascience.com/
+    background: white
+    search: true
+  page-footer:
+    background: '#484B50'
+    border: false
+    left: '[![](/_extensions/Arcadia-Science/arcadia-pub-theme/assets/logo_white.png){fig-alt="Arcadia-Science" width=65px}](https://www.arcadiascience.com/)
+
+      Copyright 2026, Arcadia Science
+
+      '
+    right:
+    - icon: twitter-x
+      href: https://twitter.com/arcadiascience
+    - icon: github
+      href: https://github.com/Arcadia-Science
+  google-analytics: '{{< var pub.google_analytics_id >}}'
+  cookie-consent:
+    type: implied
+    style: simple
+format:
+  Arcadia-Science/arcadia-pub-theme-html:
+    html-math-method: katex
+shortcodes:
+- _extensions/mcanouil/iconify/iconify.lua
+filters:
+- _extensions/pandoc-ext/abstract-section/abstract-section.lua
+- _extensions/mcanouil/collapse-output/collapse-output.lua
+- _extensions/filter-warnings/filter-warnings.lua
+comments:
+  giscus:
+    repo: Arcadia-Science/notebook-pub-template
+    input-position: top
+reference-location: margin
+bibliography: ref.bib
+csl: "_extensions/Arcadia-Science/arcadia-pub-theme/assets/arcadia.csl"
+code-annotations: hover
+html-table-processing: none
+demo-title: A brief syntax demo
