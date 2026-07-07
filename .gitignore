@@ -178,3 +178,7 @@ cython_debug/
 /*_files/
 
 **/*.quarto_ipynb
+
+# Large ELM reproduction artifacts (data + trained checkpoints) — hosted separately
+/data_cv/
+/checkpoints/
