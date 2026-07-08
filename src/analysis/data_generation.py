@@ -5,6 +5,15 @@ This script generates Kepler orbit trajectories and saves them in the data_cv fo
 for use in training.
 """
 
+# ---------------------------------------------------------------------------
+# Adapted from Liu et al., "From Kepler to Newton: Inductive Biases Guide
+# Learned World Models in Transformers" (arXiv:2602.06923), CC BY 4.0
+# (https://creativecommons.org/licenses/by/4.0/).
+# Source: https://github.com/KindXiaoming/newton-kepler
+# Modification: verbatim copy of generate_kepler_cv.py, repackaged into the
+# `analysis` package. Full attribution in NOTICE.md.
+# ---------------------------------------------------------------------------
+
 import numpy as np
 from scipy.integrate import solve_ivp
 import os

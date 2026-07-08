@@ -5,6 +5,15 @@ Registers activation hooks, collects hidden states, and regresses Newtonian
 measure what each model linearly encodes.
 """
 
+# ---------------------------------------------------------------------------
+# Adapted from Liu et al., "From Kepler to Newton: Inductive Biases Guide
+# Learned World Models in Transformers" (arXiv:2602.06923), CC BY 4.0
+# (https://creativecommons.org/licenses/by/4.0/).
+# Source: https://github.com/KindXiaoming/newton-kepler
+# Modification: linear/geometry probing extracted from the upstream training
+# script. Full attribution in NOTICE.md.
+# ---------------------------------------------------------------------------
+
 import numpy as np
 import torch
 from sklearn.linear_model import LinearRegression

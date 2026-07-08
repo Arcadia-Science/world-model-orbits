@@ -7,6 +7,17 @@ learned representations, and saves checkpoints. Run as a CLI:
     python -m analysis.training
 """
 
+# ---------------------------------------------------------------------------
+# Adapted from Liu et al., "From Kepler to Newton: Inductive Biases Guide
+# Learned World Models in Transformers" (arXiv:2602.06923), CC BY 4.0
+# (https://creativecommons.org/licenses/by/4.0/).
+# Source: https://github.com/KindXiaoming/newton-kepler
+# Modification: training/rollout code from the upstream training script;
+# main() rewritten to train the three publication models. Full attribution
+# in NOTICE.md.
+# ---------------------------------------------------------------------------
+
+import argparse
 import os
 import numpy as np
 import torch
@@ -902,23 +913,45 @@ def sweep_parameters(block_size_list, num_trajectories_list, noise_scale_list, l
     return None
 
 
-def main():
-    """Main execution function."""
-    # Run a single model with default parameters
-    seed = 1
-    np.random.seed(seed)
-    torch.manual_seed(seed)
+# The three trained models the publication analyses depend on. Each entry is a
+# single (block_size, noise_scale) pair; every other hyperparameter is shared
+# (see the sweep_parameters defaults: n_layer=2, n_embd=32, n_head=1, bias=False).
+PUBLICATION_MODELS = [
+    dict(block_size=2,   noise_scale=0.1),  # noisy short-context  -- rotation heuristic
+    dict(block_size=100, noise_scale=0.1),  # noisy long-context   -- Keplerian
+    dict(block_size=2,   noise_scale=0.0),  # noiseless short-ctx  -- Verlet + Newtonian gravity
+]
 
-    num_trajectories_list = [10000]
-    #block_size_list = [2, 100]  # Quick test: just endpoints
-    #block_size_list = [60, 70, 80, 90]
-    block_size_list = [2, 100]
-    noise_scale_list = [0.1]
-    loss_mask_list = ['all']
-    n_steps = 20000
-    prob_freq = 100
-    sweep_parameters(block_size_list, num_trajectories_list, noise_scale_list, loss_mask_list,
-                     n_steps=n_steps, prob_freq=prob_freq, seed=seed)
+
+def main():
+    """Train the three models the publication analyses depend on.
+
+    Reads the pre-generated dataset from ./data_cv/ (run
+    `python -m analysis.data_generation` first) and writes checkpoints to
+    ./checkpoints/kepler_cv_blocksize_elm/ with the names the notebooks load.
+    Pass --smoke for a fast end-to-end sanity run (not for publication).
+    """
+    parser = argparse.ArgumentParser(description="Train the publication's models.")
+    parser.add_argument("--smoke", action="store_true",
+                        help="fast sanity run (200 steps) instead of the full 20000")
+    args = parser.parse_args()
+
+    n_steps = 200 if args.smoke else 20000
+
+    for i, cfg in enumerate(PUBLICATION_MODELS, start=1):
+        print(f"\n{'#' * 80}\n# Model {i}/{len(PUBLICATION_MODELS)}: "
+              f"block_size={cfg['block_size']}, noise_scale={cfg['noise_scale']}\n{'#' * 80}")
+        # One pair per call: singleton lists reuse sweep_parameters' checkpoint
+        # saving, resume-skip, and filename convention.
+        sweep_parameters(
+            block_size_list=[cfg["block_size"]],
+            num_trajectories_list=[10000],
+            noise_scale_list=[cfg["noise_scale"]],
+            loss_mask_list=["all"],
+            n_steps=n_steps,
+            prob_freq=100,
+            seed=1,
+        )
 
 
 if __name__ == "__main__":

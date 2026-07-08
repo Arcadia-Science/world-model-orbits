@@ -5,6 +5,15 @@ parameters) and the routine that chops trajectories into fixed-length training
 windows. See `data_generation` for how the dataset is produced.
 """
 
+# ---------------------------------------------------------------------------
+# Adapted from Liu et al., "From Kepler to Newton: Inductive Biases Guide
+# Learned World Models in Transformers" (arXiv:2602.06923), CC BY 4.0
+# (https://creativecommons.org/licenses/by/4.0/).
+# Source: https://github.com/KindXiaoming/newton-kepler
+# Modification: trajectory loading/windowing extracted from the upstream
+# training script. Full attribution in NOTICE.md.
+# ---------------------------------------------------------------------------
+
 import os
 import importlib.util
 import numpy as np

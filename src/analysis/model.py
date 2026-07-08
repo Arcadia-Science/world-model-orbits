@@ -50,6 +50,15 @@ Notes
 - Reconstruction error should be < ~1e-10 at float64 precision.
 """
 
+# ---------------------------------------------------------------------------
+# Adapted from Liu et al., "From Kepler to Newton: Inductive Biases Guide
+# Learned World Models in Transformers" (arXiv:2602.06923), CC BY 4.0
+# (https://creativecommons.org/licenses/by/4.0/).
+# Source: https://github.com/KindXiaoming/newton-kepler
+# Modification: extends the upstream model with Equivalent Linear Mapping (ELM)
+# detachment and bias=False. Full attribution in NOTICE.md.
+# ---------------------------------------------------------------------------
+
 import math
 from dataclasses import dataclass
 
