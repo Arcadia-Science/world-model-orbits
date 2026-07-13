@@ -47,7 +47,6 @@ import matplotlib
 import matplotlib.pyplot as plt   # backend left untouched on import so notebooks keep
                                   # their inline backend; main() selects Agg for CLI runs
 
-from . import model as M
 from .model import load_from_checkpoint
 from .data import (
     load_trajectories,
@@ -57,13 +56,9 @@ from .data import (
 # float64 -- the embedding-level reconstruction is exact only at full precision.
 torch.set_default_dtype(torch.float64)
 
-# Keep the repo's (fixed, mean-live) LayerNorm detachment.
-FIXED_LN = M.layernorm_detached
-
 
 def load_quiet(checkpoint_path):
     """Load a checkpoint, suppressing the model's construction prints."""
-    M.layernorm_detached = FIXED_LN
     with contextlib.redirect_stdout(io.StringIO()):
         model, ckpt = load_from_checkpoint(checkpoint_path, device='cpu')
     model.eval()

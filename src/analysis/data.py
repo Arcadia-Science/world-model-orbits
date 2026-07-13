@@ -128,7 +128,7 @@ def load_trajectories(data_dir='data_cv', num_trajectories_needed=None):
         )
 
 
-def chop_trajectories_into_sequences(trajectories, block_size, seed=None, target_len=1, target_dim=None):
+def chop_trajectories_into_sequences(trajectories, block_size, seed=None, target_len=1):
     """
     Chop trajectories into sequences of length block_size + 1 when block_size < num_points_per_trajectory.
 
@@ -140,19 +140,17 @@ def chop_trajectories_into_sequences(trajectories, block_size, seed=None, target
     Args:
         trajectories: array of shape (num_trajectories, num_points, C)
         block_size: block size for the model
-        seed: random seed for reproducibility (optional)
-        target_dim: if set, keep only the first `target_dim` channels of the
-            target (the input keeps all C channels). Used by the variable-dt
-            task where the input token is (x, y, dt) but the target is the next
-            (x, y) only -- we predict position, never the dt query. None keeps
-            all channels (standard coordinate->coordinate case).
+        seed: random seed for reproducibility (optional). Uses a local RNG, so
+            it does not disturb the process-global NumPy random state.
+        target_len: number of future ground-truth points per target (1 = the
+            standard single-next-step objective; k provides the k future points
+            needed for a rollout-loss horizon of k).
 
     Returns:
         inputs: array of shape (num_sequences, block_size, C)
-        targets: array of shape (num_sequences, target_len, target_dim or C)
+        targets: array of shape (num_sequences, target_len, C)
     """
-    if seed is not None:
-        np.random.seed(seed)
+    rng = np.random.default_rng(seed)
 
     num_trajectories, num_points, _ = trajectories.shape
     # block_size input points + target_len future target points (target_len=1 is
@@ -174,14 +172,12 @@ def chop_trajectories_into_sequences(trajectories, block_size, seed=None, target
             start_positions = np.arange(max_start)
         else:
             # Randomly sample without replacement
-            start_positions = np.random.choice(max_start, size=num_sequences_per_trajectory, replace=False)
+            start_positions = rng.choice(max_start, size=num_sequences_per_trajectory, replace=False)
 
         # Create sequences starting at selected positions
         for i in start_positions:
             input_seq = traj[i:i+block_size]  # (block_size, C) - all input channels
             target_seq = traj[i+block_size:i+block_size+target_len]  # (target_len, C)
-            if target_dim is not None:
-                target_seq = target_seq[:, :target_dim]  # predict first target_dim channels only (e.g. (x,y), not dt)
             all_inputs.append(input_seq)
             all_targets.append(target_seq)
 

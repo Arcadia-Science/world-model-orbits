@@ -19,6 +19,8 @@ import torch
 from sklearn.linear_model import LinearRegression
 from sklearn.metrics import r2_score
 
+from .data import chop_trajectories_into_sequences
+
 
 def setup_activation_hooks(model):
     """
@@ -415,3 +417,39 @@ def run_geometry_probes(activation_dict, orbital_params, trajectory_indices):
     #         print(f"  {probe_name:20s}: R² (all) = {result['r2']:.4f}, R² (last) = {result['r2_last']:.4f}")
 
     return probe_results
+
+
+def make_probe_windows(trajectories, orbital_params, block_size, n_probe, seed=0):
+    """Chop trajectories into windows and map each to its source-trajectory index.
+
+    Caps the effective block size to num_points-1 so block_size >= num_points still
+    yields windows. Returns (windows, traj_idx) with `n_probe` randomly selected windows.
+    """
+    npnts  = trajectories.shape[1]
+    eff_bs = min(block_size, npnts - 1)
+    inputs, _ = chop_trajectories_into_sequences(trajectories, eff_bs, seed=seed)
+    seqs_per_traj = max(1, npnts // eff_bs)
+    traj_idx = np.arange(len(inputs)) // seqs_per_traj
+    rng = np.random.default_rng(seed)
+    sel = rng.choice(len(inputs), size=min(n_probe, len(inputs)), replace=False)
+    return inputs[sel].astype(np.float64), np.clip(traj_idx[sel], 0, len(orbital_params) - 1)
+
+
+def probe_model(model, trajectories, orbital_params, block_size, n_probe=1000, seed=0):
+    """Run Newtonian (force) + Keplerian (geometry) linear probes on one model.
+
+    Returns (newton_results, kepler_results), each a dict keyed by layer name.
+    """
+    windows, traj_idx = make_probe_windows(trajectories, orbital_params, block_size, n_probe, seed)
+    hooks, act = setup_activation_hooks(model)
+    _, gforce = collect_activations(model, torch.tensor(windows), None, act)
+    newton = run_linear_probes(act, gforce)
+    kepler = run_geometry_probes(act, orbital_params, traj_idx)
+    for h in hooks:
+        h.remove()
+    return newton, kepler
+
+
+def best_r2(probe_results, target, key='r2_last'):
+    """Best-over-layers R^2 for a probe target (matches Liu et al. Fig 6 'postfix=_last')."""
+    return max(layer[target][key] for layer in probe_results.values() if target in layer)

@@ -71,42 +71,21 @@ def clear_gpu_cache():
         torch.cuda.synchronize()
 
 
-def setup_model(block_size, n_layer=2, n_embd=32, device=None, variable_dt=False):
+def setup_model(block_size, n_layer=2, n_embd=32, device=None):
     if device is None:
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-    if variable_dt:
-        # Variable-dt model: input token (x, y, dt) -> predict next (x, y). Uses
-        # the sister module model_cv_detached_dt.py (decoupled input/output dims).
-        # Standard runs stay on model_cv_detached.py so their checkpoints and the
-        # existing analysis tooling are untouched.
-        # NOTE: variable-dt models are not part of this publication's ported scope;
-        # model_cv_detached_dt is intentionally absent, so this branch is unsupported.
-        from .model_cv_detached_dt import GPTConfigCV as GPTConfigCVDT, GPTCV as GPTCVDT
-        config = GPTConfigCVDT(
-            block_size=block_size,
-            input_dim=3,
-            output_dim=2,
-            n_layer=n_layer,
-            n_head=1,
-            n_embd=n_embd,
-            attention_alpha=0.0,
-            bias=False,
-            dropout=0.0,
-        )
-        model = GPTCVDT(config)
-    else:
-        config = GPTConfigCV(
-            block_size=block_size,
-            input_dim=2,
-            n_layer=n_layer,
-            n_head=1,
-            n_embd=n_embd,
-            attention_alpha=0.0,
-            bias=False,
-            dropout=0.0,
-        )
-        model = GPTCV(config)
+    config = GPTConfigCV(
+        block_size=block_size,
+        input_dim=2,
+        n_layer=n_layer,
+        n_head=1,
+        n_embd=n_embd,
+        attention_alpha=0.0,
+        bias=False,
+        dropout=0.0,
+    )
+    model = GPTCV(config)
     model = model.to(device)
     return model
 
@@ -176,7 +155,7 @@ def rollout_predict(model, x0, horizon, block_size):
 
 def train_model(model, train_inputs, train_targets, test_inputs, test_targets, train_trajectories, test_trajectories,
                  n_steps=1001, lr=1e-3, weight_decay=0.0, noise_scale=0.1, prob_freq=100, batch_size=128,
-                 loss_mask='all', seed=1, orbital_params=None, rollout_horizon=1, variable_dt=False):
+                 loss_mask='all', seed=1, orbital_params=None, rollout_horizon=1):
     """
     Train the model on the trajectory data with periodic evaluation.
 
@@ -240,12 +219,6 @@ def train_model(model, train_inputs, train_targets, test_inputs, test_targets, t
 
         # Training step
         noise = torch.randn_like(batch_inputs) * noise_scale
-        if variable_dt:
-            # Don't corrupt the dt query channel(s): noise only the position
-            # channels [0:output_dim]; dt is an exact, known input, not an
-            # observation. (For the standard case output_dim == input_dim, so
-            # this branch is skipped and all channels are noised as before.)
-            noise[..., model.config.output_dim:] = 0.0
         inputs_noised = batch_inputs + noise
         if rollout_horizon == 1:
             predictions, _ = model.forward(inputs_noised, None)  # Get predictions without loss
@@ -286,12 +259,8 @@ def train_model(model, train_inputs, train_targets, test_inputs, test_targets, t
             if i % 500 == 0 and i > 0:
                 clear_gpu_cache()
 
-        # Evaluate at specified frequency. Skipped entirely for variable_dt:
-        # the trajectory-rollout error and the linear/geometry probes assume
-        # 2-channel positions on a fixed-dt grid, neither of which holds here.
-        # Per-step train/test losses are still logged; the variable-dt
-        # mechanistic story comes from the downstream ELM dt-sweep analysis.
-        if (not variable_dt) and (i % prob_freq == 0):
+        # Evaluate at specified frequency.
+        if i % prob_freq == 0:
             print(f"\nEvaluating at step {i+1}...")
             eval_step_results = {}
 
@@ -586,9 +555,8 @@ def generate_trajectory_and_compute_error(model, inputs, trajectories, condition
     return error_stats
 
 
-def train_one_model(block_size=100, noise_scale=0.1, lr=1e-3, n_layer=2, n_embd=16, num_trajectories=10000,
-                    n_steps=1001, prob_freq=100, loss_mask='all', seed=1, batch_size=128, rollout_horizon=1,
-                    variable_dt=False):
+def train_one_model(block_size=100, noise_scale=0.1, lr=1e-3, n_layer=2, n_embd=32, num_trajectories=10000,
+                    n_steps=1001, prob_freq=100, loss_mask='all', seed=1, batch_size=128, rollout_horizon=1):
     """
     Train a single model with specified hyperparameters.
 
@@ -613,16 +581,7 @@ def train_one_model(block_size=100, noise_scale=0.1, lr=1e-3, n_layer=2, n_embd=
     if num_trajectories <= 0:
         raise ValueError(f"num_trajectories must be a positive integer, got {num_trajectories}")
 
-    # Variable-dt runs read the 3-channel (x, y, dt) dataset and predict only the
-    # first `target_dim` channels (the next (x, y)). Standard runs are unchanged.
-    data_dir = 'data_cv_vardt' if variable_dt else 'data_cv'
-    target_dim = 2 if variable_dt else None
-    if variable_dt and rollout_horizon > 1:
-        raise NotImplementedError(
-            "variable_dt currently supports rollout_horizon=1 (single-step) only; "
-            "feeding a 2-channel prediction back as a 3-channel (x,y,dt) token needs "
-            "a dt query schedule (see model.generate(dt_next=...))."
-        )
+    data_dir = 'data_cv'
 
     # Load trajectories. Only load what we need (2*num_trajectories for train+test).
     print(f"Loading Kepler orbit trajectories from {data_dir}...")
@@ -672,8 +631,8 @@ def train_one_model(block_size=100, noise_scale=0.1, lr=1e-3, n_layer=2, n_embd=
         print(f"Randomly selecting {num_sequences_per_traj} sequences per trajectory (instead of all sliding windows)")
         if rollout_horizon > 1:
             print(f"Rollout loss enabled: horizon={rollout_horizon} (targets are {rollout_horizon} future points)")
-        train_inputs_np, train_targets_np = chop_trajectories_into_sequences(train_trajectories, block_size, seed=seed, target_len=rollout_horizon, target_dim=target_dim)
-        test_inputs_np, test_targets_np = chop_trajectories_into_sequences(test_trajectories, block_size, seed=seed+1, target_len=rollout_horizon, target_dim=target_dim)  # Different seed for test
+        train_inputs_np, train_targets_np = chop_trajectories_into_sequences(train_trajectories, block_size, seed=seed, target_len=rollout_horizon)
+        test_inputs_np, test_targets_np = chop_trajectories_into_sequences(test_trajectories, block_size, seed=seed+1, target_len=rollout_horizon)  # Different seed for test
         print(f"Train sequences: {train_inputs_np.shape[0]}, Test sequences: {test_inputs_np.shape[0]}")
     elif rollout_horizon > 1:
         raise NotImplementedError(
@@ -688,10 +647,6 @@ def train_one_model(block_size=100, noise_scale=0.1, lr=1e-3, n_layer=2, n_embd=
         train_targets_np = train_trajectories[:,1:]   # shape: (train_size, num_points-1, C)
         test_inputs_np = test_trajectories[:,:-1]  # shape: (test_size, num_points-1, C)
         test_targets_np = test_trajectories[:,1:]   # shape: (test_size, num_points-1, C)
-        if target_dim is not None:
-            # Predict only the first target_dim channels (next (x, y), not dt).
-            train_targets_np = train_targets_np[..., :target_dim]
-            test_targets_np = test_targets_np[..., :target_dim]
 
     # Convert to PyTorch tensors - keep on CPU to save GPU memory, will move batches to GPU during training
     train_inputs = torch.from_numpy(train_inputs_np).float()  # keep on CPU
@@ -707,7 +662,7 @@ def train_one_model(block_size=100, noise_scale=0.1, lr=1e-3, n_layer=2, n_embd=
 
     # Setup model
     print("\nSetting up model...")
-    model = setup_model(block_size=block_size, n_layer=n_layer, n_embd=n_embd, device=device, variable_dt=variable_dt)
+    model = setup_model(block_size=block_size, n_layer=n_layer, n_embd=n_embd, device=device)
     print_gpu_memory_stats("After model setup: ")
 
     # Initial forward pass - use smaller batch to save memory
@@ -749,7 +704,7 @@ def train_one_model(block_size=100, noise_scale=0.1, lr=1e-3, n_layer=2, n_embd=
         model, train_inputs, train_targets, test_inputs, test_targets, train_trajectories, test_trajectories,
         n_steps=n_steps, lr=lr, weight_decay=0.0, noise_scale=noise_scale, prob_freq=prob_freq,
         loss_mask=loss_mask, batch_size=batch_size, seed=seed, orbital_params=orbital_params_for_probing,
-        rollout_horizon=rollout_horizon, variable_dt=variable_dt
+        rollout_horizon=rollout_horizon
     )
 
     train_losses = training_results['train_losses']
@@ -810,8 +765,7 @@ def train_one_model(block_size=100, noise_scale=0.1, lr=1e-3, n_layer=2, n_embd=
 
 
 def sweep_parameters(block_size_list, num_trajectories_list, noise_scale_list, loss_mask_list=['all'],
-                     lr=1e-3, n_layer=2, n_embd=32, n_steps=1001, prob_freq=100, seed=1, rollout_horizon=1,
-                     variable_dt=False):
+                     lr=1e-3, n_layer=2, n_embd=32, n_steps=1001, prob_freq=100, seed=1, rollout_horizon=1):
     """
     Sweep over block_size, num_trajectories, noise_scale, and loss_mask parameters.
 
@@ -845,8 +799,6 @@ def sweep_parameters(block_size_list, num_trajectories_list, noise_scale_list, l
     # Tag filenames when using a rollout-loss horizon > 1 so the checkpoint/results
     # do not clobber the standard single-step (horizon=1) runs.
     rollout_tag = '' if rollout_horizon == 1 else f'_rollout_{rollout_horizon}'
-    # Tag variable-dt runs so they sit alongside (not on top of) the fixed-dt ones.
-    vardt_tag = '_vardt' if variable_dt else ''
 
     num_traj = 10000
 
@@ -856,7 +808,7 @@ def sweep_parameters(block_size_list, num_trajectories_list, noise_scale_list, l
         for noise_scale in noise_scale_list:
             for num_traj in num_trajectories_list:
                 for loss_mask in loss_mask_list:
-                    results_filename = f'./results/kepler_cv_blocksize_elm/results_block_size_{block_size}_num_trajectories_{num_traj}_noise_scale_{noise_scale}_loss_mask_{loss_mask}_seed_{seed}{rollout_tag}{vardt_tag}.pt'
+                    results_filename = f'./results/kepler_cv_blocksize_elm/results_block_size_{block_size}_num_trajectories_{num_traj}_noise_scale_{noise_scale}_loss_mask_{loss_mask}_seed_{seed}{rollout_tag}.pt'
                     if not os.path.exists(results_filename):
                         configs_to_run.append((block_size, num_traj, noise_scale, loss_mask))
                     else:
@@ -878,18 +830,17 @@ def sweep_parameters(block_size_list, num_trajectories_list, noise_scale_list, l
             prob_freq=prob_freq,
             loss_mask=loss_mask,
             seed=seed,
-            rollout_horizon=rollout_horizon,
-            variable_dt=variable_dt
+            rollout_horizon=rollout_horizon
         )
 
         # save results to file (separate directory for ELM variant)
-        results_filename = f'./results/kepler_cv_blocksize_elm/results_block_size_{block_size}_num_trajectories_{num_traj}_noise_scale_{noise_scale}_loss_mask_{loss_mask}{rollout_tag}{vardt_tag}.pt'
+        results_filename = f'./results/kepler_cv_blocksize_elm/results_block_size_{block_size}_num_trajectories_{num_traj}_noise_scale_{noise_scale}_loss_mask_{loss_mask}{rollout_tag}.pt'
         os.makedirs(os.path.dirname(results_filename), exist_ok=True)
         torch.save(results, results_filename)
         print(f"Saved results to {results_filename}")
 
         # save model checkpoint for ELM analysis
-        checkpoint_filename = f'./checkpoints/kepler_cv_blocksize_elm/model_block_size_{block_size}_num_trajectories_{num_traj}_noise_scale_{noise_scale}{rollout_tag}{vardt_tag}.pt'
+        checkpoint_filename = f'./checkpoints/kepler_cv_blocksize_elm/model_block_size_{block_size}_num_trajectories_{num_traj}_noise_scale_{noise_scale}{rollout_tag}.pt'
         os.makedirs(os.path.dirname(checkpoint_filename), exist_ok=True)
         model.save_checkpoint(
             checkpoint_filename,

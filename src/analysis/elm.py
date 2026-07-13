@@ -78,6 +78,243 @@ def collect(model, block_size, n_windows, seed=0, offset=0):
     return all_blocks, coeffs, float(np.max(recon_errs))
 
 
+def reconstruction_scatter(model, block_size, n_windows, seed=0, offset=0):
+    """ELM reconstruction check for the LAST output token, over sampled windows.
+
+    For each window this compares the model's forward output to the embedding-level
+    ELM reconstruction  (content + positional = Sum_t J_{h,t} @ h_t).  Returns
+    (model_values, elm_values), each flattened over windows, for a y=x scatter:
+    a tight identity line (relative error ~1e-10) confirms the detached Jacobian is
+    an exact linear stand-in for the model.
+    """
+    windows = sample_orbit_windows(block_size, n_windows, seed=seed, offset=offset)
+    model_vals, emb_vals = [], []
+
+    for w in windows:
+        xs = torch.tensor(w, dtype=torch.float64).unsqueeze(0)
+
+        with torch.no_grad():
+            y_model, _ = model(xs)
+        y_last = y_model[0, -1, :].detach().numpy()
+
+        T   = xs.shape[1]
+        pos = torch.arange(0, T, dtype=torch.long)
+        x_emb   = model.embed_continuous(xs)
+        pos_emb = model.transformer.wpe(pos)
+        h_star  = (x_emb + pos_emb).detach()
+
+        model.detach_for_elm = True
+        model.eval()
+
+        def last_output(h_in):
+            out = model.forward_from_embedding(h_in)
+            return out[0, -1, :]
+
+        content_last    = torch.zeros(2, dtype=torch.float64)
+        positional_last = torch.zeros(2, dtype=torch.float64)
+
+        for t in range(T):
+            before = h_star[0, :t, :].detach()
+            after  = h_star[0, t+1:, :].detach()
+
+            def fwd(h_t, before=before, after=after):
+                h_in = torch.cat([before, h_t.unsqueeze(0), after], dim=0).unsqueeze(0)
+                with torch.enable_grad():
+                    return last_output(h_in)
+
+            h_t = h_star[0, t, :].detach().requires_grad_(True)
+            J_ht = torch.autograd.functional.jacobian(
+                fwd, h_t, create_graph=False, strict=False
+            )
+
+            W_in  = model.input_embedding.weight
+            J_xt  = J_ht @ W_in
+            content_last    += J_xt @ xs[0, t, :]
+            positional_last += J_ht @ pos_emb[t]
+
+        model.detach_for_elm = False
+
+        recon = (content_last + positional_last).detach().numpy()
+        model_vals.append(y_last)
+        emb_vals.append(recon)
+
+    return np.concatenate(model_vals), np.concatenate(emb_vals)
+
+
+def rotation_channel_decomposition(model, block_size, n_windows, seed=0, offset=0):
+    """Attribute the model's per-step turn to isotropic / generator / shear / positional channels.
+
+    For each real-orbit window (intended for block_size == 2) the last-token prediction is
+    the EXACT ELM sum of four contributions applied to the two input positions r_{t-1}, r_t:
+
+        r_hat_{t+1} = iso + generator + shear + positional      (content = iso + gen + shear)
+
+    In 2D a scaled rotation is a complex number: writing r = x + iy, a content block splits as
+        J @ r  =  s*r  +  a*(i r)  +  shear,      s = tr(J)/2,  a = (J_10 - J_01)/2,
+    i.e. a *collinear* (radial) isotropic part s*r, a *perpendicular* (tangential) generator
+    part a*(i r), and a symmetric-traceless shear remainder. s is exactly the isotropic
+    coefficient c_s = tr(J)/D; the generator a carries the turn (theta = atan2(a, s)).
+
+    Each channel vector is projected onto the local frame of r_t (radial rhat = r_t/|r_t|,
+    tangential = i*rhat) and normalised by |r_t|. The *tangential* share is that channel's
+    contribution to the per-step turn (rotation = tangential displacement per radius); the
+    *radial* share is its contribution to the radius change. Combining the two tokens is
+    just complex addition, so the isotropic coefficient and the generator enter the same
+    sum -- no separate handling of c_s is needed.
+
+    Uses the same sampled windows as `collect` (matching seed/offset), so the returned
+    per-window arrays line up with the Jacobian blocks analysed elsewhere.
+
+    Returns a dict of per-window arrays plus summary scalars:
+        tang_{iso,gen,shear,pos} : tangential share of each channel (fraction of |r_t|)
+        rad_{iso,gen,shear,pos}  : radial share of each channel
+        dth_beh                  : behavioural turn, signed angle(r_t -> model pred) [deg]
+        dth_rot                  : turn of the rotation-only reconstruction iso+gen [deg]
+        radius_ratio             : |model pred| / |r_t|
+        corr_rot_beh             : corr(dth_rot, dth_beh) over windows
+        recon_err_max            : max ||(iso+gen+shear+pos) - model output|| (ELM closure)
+    """
+    windows = sample_orbit_windows(block_size, n_windows, seed=seed, offset=offset)
+    T, D = block_size, windows.shape[-1]
+    last = slice((T - 1) * D, T * D)
+    mdtype = next(model.parameters()).dtype
+
+    def cx(v):                                        # (..., 2) real -> complex
+        return v[..., 0] + 1j * v[..., 1]
+
+    keys = ['iso', 'gen', 'shear', 'pos']
+    out = {f'tang_{k}': [] for k in keys}
+    out.update({f'rad_{k}': [] for k in keys})
+    out.update(dth_beh=[], dth_rot=[], radius_ratio=[], recon_err=[])
+
+    for w in windows:
+        x = torch.tensor(w, dtype=torch.float64).unsqueeze(0)
+        _, jac_x, _, _, _, pos_c, _, _ = model.compute_detached_jacobians_embedding(x)
+        Jr = jac_x[T - 1][last].detach().numpy()      # content block, recent -> last output
+        Jp = jac_x[T - 2][last].detach().numpy()      # content block, prev   -> last output
+        pos_vec = pos_c[last].detach().numpy()        # positional contribution to last output
+
+        r_t, r_p = w[T - 1], w[T - 2]
+        zt, zp = cx(r_t), cx(r_p)
+
+        def parts(J):
+            return (J[0, 0] + J[1, 1]) / 2, (J[1, 0] - J[0, 1]) / 2   # (isotropic s, generator a)
+        sr, ar = parts(Jr)
+        sp, ap = parts(Jp)
+
+        z_iso   = sr * zt + sp * zp
+        z_gen   = 1j * (ar * zt + ap * zp)
+        z_cont  = cx(Jr @ r_t) + cx(Jp @ r_p)         # full content (iso + gen + shear)
+        z_shear = z_cont - z_iso - z_gen
+        z_pos   = cx(pos_vec)
+
+        with torch.no_grad():
+            z_pred = cx(model(x.to(mdtype))[0][0, -1, :].double().numpy())
+        out['recon_err'].append(abs((z_iso + z_gen + z_shear + z_pos) - z_pred))
+
+        rhat = zt / abs(zt)
+        for k, v in zip(keys, [z_iso, z_gen, z_shear, z_pos]):
+            proj = v * np.conj(rhat)                  # rotate channel into r_t's frame
+            out[f'rad_{k}'].append(proj.real / abs(zt))   # component along r_t
+            out[f'tang_{k}'].append(proj.imag / abs(zt))  # component along i*r_t (CCW forward)
+
+        out['dth_beh'].append(np.degrees(np.angle(z_pred / zt)))
+        out['dth_rot'].append(np.degrees(np.angle((z_iso + z_gen) / zt)))
+        out['radius_ratio'].append(abs(z_pred) / abs(zt))
+
+    out = {k: np.asarray(v) for k, v in out.items()}
+    out['corr_rot_beh'] = float(np.corrcoef(out['dth_rot'], out['dth_beh'])[0, 1])
+    out['recon_err_max'] = float(out.pop('recon_err').max())
+    return out
+
+
+def rollout(model, seed, n_steps):
+    """Autoregressive rollout of a block_size=2 model from two seed positions.
+
+    `seed` is a (2, 2) array of the first two positions; feeds the model its own
+    predictions and returns the (n_steps+2, 2) generated trajectory.
+    """
+    dt = next(model.parameters()).dtype
+    traj = [np.asarray(seed[0], float), np.asarray(seed[1], float)]
+    for _ in range(n_steps):
+        win = torch.tensor(np.stack(traj[-2:]), dtype=dt).unsqueeze(0)
+        with torch.no_grad():
+            traj.append(model(win)[0][0, -1].double().numpy())
+    return np.array(traj)
+
+
+def rollout_verlet(seed, n_steps, dt=0.2):
+    """Ideal Stormer-Verlet rollout under inverse-square gravity (GM=1)."""
+    traj = [np.asarray(seed[0], float), np.asarray(seed[1], float)]
+    for _ in range(n_steps):
+        r_t, r_pr = traj[-1], traj[-2]
+        traj.append(2 * r_t - r_pr - dt**2 * r_t / np.linalg.norm(r_t)**3)
+    return np.array(traj)
+
+
+def gravity_kick_frames(model, trajectory, dt=0.2):
+    """Per-step decomposition of the Verlet-deviation gravity kick along one orbit.
+
+    For each interior step t (using the window r_{t-1}, r_t), returns the two input
+    positions, the Verlet (inertial) prediction, the ideal Newtonian gravity vector, and
+    the four channel vectors -- isotropic, rotation, shear, positional (wpe) -- whose sum
+    is the model's non-inertial correction (pred - Verlet). Returns a list of dicts,
+    one per step; intended to drive an animation of the decomposition.
+    """
+    I2 = np.eye(2)
+    Rm = np.array([[0., -1.], [1., 0.]])
+    frames = []
+    for t in range(1, len(trajectory) - 1):
+        r_pr, r_t = trajectory[t - 1], trajectory[t]
+        xs = torch.tensor(np.stack([r_pr, r_t]), dtype=torch.float64).unsqueeze(0)
+        _, jac_x, _, _, _, pos_c, _, _ = model.compute_detached_jacobians_embedding(xs)
+        last = slice(2, 4)                       # last output token, D=2
+        Jrec = jac_x[1][last].detach().numpy()
+        Jprv = jac_x[0][last].detach().numpy()
+        wpe = pos_c[last].detach().numpy()
+
+        def channels(dJ):
+            ds = (dJ[0, 0] + dJ[1, 1]) / 2
+            a = (dJ[1, 0] - dJ[0, 1]) / 2
+            sym = (dJ + dJ.T) / 2
+            G = sym - ((sym[0, 0] + sym[1, 1]) / 2) * I2
+            return ds, a, G
+
+        ds_r, a_r, G_r = channels(Jrec - 2 * I2)
+        ds_p, a_p, G_p = channels(Jprv + I2)
+        iso = ds_r * r_t + ds_p * r_pr
+        rot = (a_r * r_t + a_p * r_pr) @ Rm.T
+        shear = G_r @ r_t + G_p @ r_pr
+        frames.append(dict(
+            r_pr=r_pr, r_t=r_t,
+            verlet=2 * r_t - r_pr,
+            grav=-dt**2 * r_t / np.linalg.norm(r_t)**3,
+            iso=iso, rot=rot, shear=shear, wpe=wpe,
+        ))
+    return frames
+
+
+def rotation_decompose(blocks):
+    """Decompose 2x2 matrices into scale, rotation, and a rotation-score.
+
+    Accepts a single (2, 2) matrix or a stack (..., 2, 2) and returns
+    (scale, anti, angle_deg, rot_score), where
+        scale     = (J00 + J11) / 2                 isotropic magnitude
+        anti      = (J10 - J01) / 2                 antisymmetric (rotation) part
+        angle_deg = atan2(anti, scale)              implied rotation angle
+        rot_score = anti^2 / (anti^2 + shear^2 + diag_diff^2)   (1 = pure rotation)
+    so a matrix with J ~ scale * R(angle) has rot_score ~ 1.
+    """
+    J = np.asarray(blocks)
+    ds     = (J[..., 0, 0] + J[..., 1, 1]) / 2
+    anti   = (J[..., 1, 0] - J[..., 0, 1]) / 2
+    sym_od = (J[..., 0, 1] + J[..., 1, 0]) / 2
+    diag_d = (J[..., 0, 0] - J[..., 1, 1]) / 2
+    angle_deg = np.degrees(np.arctan2(anti, ds))
+    rot_score = anti**2 / (anti**2 + sym_od**2 + diag_d**2 + 1e-12)
+    return ds, anti, angle_deg, rot_score
+
+
 def block_rotation_decomp(all_blocks):
     """
     Decompose each D x D content-Jacobian block into the closest scaled rotation.
