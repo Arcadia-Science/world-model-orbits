@@ -78,6 +78,116 @@ def collect(model, block_size, n_windows, seed=0, offset=0):
     return all_blocks, coeffs, float(np.max(recon_errs))
 
 
+def collect_terms(model, block_size, n_windows, seed=0, offset=0):
+    """Like collect(), but also returns the size of every term in the ELM sum.
+
+    The embedding-level decomposition writes the last-position prediction as one
+    content vector per input token plus a single positional (wpe) vector:
+
+        y* = Sum_t (J_{h,t} W_in) @ x_t  +  Sum_t J_{h,t} @ wpe[t]
+             \-------- content --------/     \------ positional ------/
+
+    collect() exposes only the content blocks J_{x,t}; the positional term is
+    dropped, which is safe when it is small against whatever is being measured
+    and not otherwise.  This returns the terms themselves so the caller can
+    check.  One Jacobian pass, so it costs the same as collect().
+
+    Returns:
+        all_blocks  (n, T, D, D)  per-token content Jacobians (as collect())
+        coeffs      (n, T)        isotropic coefficients tr(J_s)/D
+        content     (n, T, D)     per-token content contribution J_{x,t} @ x_t
+        positional  (n, D)        positional contribution, summed over tokens
+        radius      (n,)          |r_t| of the most recent input position
+        recon_err_max             worst-case relative reconstruction error
+    """
+    windows = sample_orbit_windows(block_size, n_windows, seed=seed, offset=offset)
+    all_blocks, content, positional, recon_errs = [], [], [], []
+
+    for w in windows:
+        x_star = torch.tensor(w, dtype=torch.float64).unsqueeze(0)
+        T = x_star.shape[1]
+        D = x_star.shape[2]
+        last = slice((T - 1) * D, T * D)
+
+        (jac_h, jac_x, _, recon_err, _, _, _, _) = \
+            model.compute_detached_jacobians_embedding(x_star)
+
+        pos     = torch.arange(0, T, dtype=torch.long, device=x_star.device)
+        pos_emb = model.transformer.wpe(pos)
+
+        blocks = torch.stack([jac_x[t][last].detach() for t in range(T)])   # (T, D, D)
+        per_token = torch.stack([
+            jac_x[t][last].detach() @ x_star[0, t, :] for t in range(T)
+        ])                                                                  # (T, D)
+        pos_vec = sum(jac_h[t][last].detach() @ pos_emb[t] for t in range(T))
+
+        all_blocks.append(blocks.numpy())
+        content.append(per_token.numpy())
+        positional.append(pos_vec.detach().numpy())
+        recon_errs.append(recon_err)
+
+    all_blocks = np.array(all_blocks)                     # (n, T, D, D)
+    content    = np.array(content)                        # (n, T, D)
+    positional = np.array(positional)                     # (n, D)
+    D = all_blocks.shape[-1]
+    coeffs = np.trace(all_blocks, axis1=2, axis2=3) / D   # (n, T)
+    radius = np.linalg.norm(windows[:, -1, :], axis=1)    # (n,)
+    return all_blocks, coeffs, content, positional, radius, float(np.max(recon_errs))
+
+
+# Fixed hue order for the three ELM terms -- assigned by identity, never cycled.
+# Checked for colourblind separation (worst adjacent pair dE 24.6 protan).
+_TERM_COLOURS = ('#ff7f0e', '#1f77b4', '#9467bd')     # prev, recent, positional
+
+
+def plot_term_magnitudes(ax, content, positional, radius):
+    """Size of every term in the ELM sum, per window, against |r_t|.
+
+    Draws the two most recent content terms plus the positional term (for
+    block_size 2 that is the whole sum; older tokens are not drawn).
+
+    Args:
+        content:    (n, T, D) per-token content contributions, from collect_terms()
+        positional: (n, D)    positional (wpe) contribution
+        radius:     (n,)      |r_t|
+
+    Log y, because the positional term runs a couple of percent of the
+    prediction and is invisible on a linear axis beside the content terms.
+
+    The terms are vectors summing to the prediction, so their magnitudes do NOT
+    add to |y| and must not be stacked.  The annotation reports
+    Sum_terms |term| / |y|, which is 1 when the terms simply add and grows as
+    they cancel -- a forward extrapolator builds a small prediction out of
+    large opposing terms, a weighted average does not.
+    """
+    T = content.shape[1]
+    nrm = lambda a: np.linalg.norm(a, axis=-1)
+    y_mag = nrm(content.sum(1) + positional)
+
+    series = [
+        (r'$J_{\rm prev}\,\mathbf{r}_{t-1}$',   nrm(content[:, T - 2])),
+        (r'$J_{\rm recent}\,\mathbf{r}_{t}$',   nrm(content[:, T - 1])),
+        (r'positional (wpe)',                   nrm(positional)),
+    ]
+    for (label, mag), colour in zip(series, _TERM_COLOURS):
+        ax.scatter(radius, mag, s=12, alpha=0.55, color=colour, linewidths=0,
+                   label=f'{label}   median {np.median(mag):.3f}')
+
+    cancellation = np.median(sum(mag for _, mag in series) / y_mag)
+    ax.text(0.03, 0.03,
+            r'$\sum|{\rm term}|\,/\,|y|$ = ' + f'{cancellation:.2f}'
+            + '\n(1.0 = terms add, >1 = they cancel)',
+            transform=ax.transAxes, fontsize=8, va='bottom',
+            bbox=dict(boxstyle='round', fc='white', ec='0.7', alpha=0.85))
+
+    ax.set_yscale('log')
+    ax.set_xlabel(r'$|\mathbf{r}_t|$')
+    ax.set_ylabel('magnitude of ELM term')
+    ax.grid(True, which='both', alpha=0.2, lw=0.5)
+    ax.set_axisbelow(True)
+    ax.legend(fontsize=8, loc='center right')
+
+
 def reconstruction_scatter(model, block_size, n_windows, seed=0, offset=0):
     """ELM reconstruction check for the LAST output token, over sampled windows.
 
