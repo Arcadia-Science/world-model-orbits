@@ -188,6 +188,295 @@ def plot_term_magnitudes(ax, content, positional, radius):
     ax.legend(fontsize=8, loc='center right')
 
 
+def kick_terms(content, positional, windows, dt):
+    """The vector terms whose sum is the model's deviation from inertial coasting.
+
+    Verlet's inertial part is 2 r_t - r_{t-1}; subtracting it from the ELM identity
+    leaves exactly three terms, one per input token plus the positional one:
+
+        r_hat - (2 r_t - r_{t-1}) = dJ_t @ r_t + dJ_{t-1} @ r_{t-1} + P
+                                    \--------- content ---------/     wpe
+
+    where dJ_t = J_t - 2I and dJ_{t-1} = J_{t-1} + I.  The ELM sum is a sum of
+    VECTORS, so the dJ blocks are operators and only become contributions once they
+    act on their inputs -- which is why the comparison has to be made on the
+    products.  Those products need no matrix algebra: collect_terms() already
+    returns J_{x,t} @ x_t as `content`, so dJ_t @ r_t is just content - 2 r_t.
+
+    Args:
+        content:    (n, T, D) per-token content contributions, from collect_terms()
+        positional: (n, D)    positional (wpe) contribution, from collect_terms()
+        windows:    (n, T, D) the input windows those terms were computed on
+        dt:         sample spacing, used for the ideal Newtonian kick
+
+    Returns a dict of (n, D) vectors -- `recent`, `prev`, `content`, `positional`,
+    `total`, `grav` (the ideal kick -dt^2 r_t/|r_t|^3) -- plus `radius` (n,).
+    """
+    T = content.shape[1]
+    r_prev, r_t = windows[:, T - 2, :], windows[:, T - 1, :]
+    recent = content[:, T - 1] - 2.0 * r_t          # (J_recent - 2I) @ r_t
+    prev = content[:, T - 2] + r_prev               # (J_prev   +  I) @ r_prev
+    radius = np.linalg.norm(r_t, axis=1)
+    return dict(recent=recent, prev=prev, content=recent + prev,
+                positional=positional, total=recent + prev + positional,
+                grav=-dt ** 2 * r_t / radius[:, None] ** 3, radius=radius)
+
+
+def plot_kick_terms(axes, content, positional, windows, dt):
+    """Three panels showing that the gravitational kick emerges only from the sum.
+
+    Panels (a) and (b) take one component of the deviation from inertia each,
+    resolved in that window's own gravity frame -- radial along the ideal kick (i.e.
+    toward the star) and tangential perpendicular to it -- and plot the positional
+    contribution against the content one, in units of |grav|.  Reproducing gravity
+    means the radial pair sums to 1 and the tangential pair to 0, so each component
+    has to land on a line of slope -1, drawn dashed.  Points are coloured by |r_t|.
+
+    Note what carries the evidence in (a) and (b).  Where along its line a point
+    sits is the result: it is how the labour is divided between the two terms, and
+    many divisions reproduce the same total, so which one the network uses is not
+    derivable from its behaviour.  That the lines sit at 1 and 0 is a consistency
+    check -- the attribution route and the behavioural route reach the same total by
+    different means.  The slope carries nothing: the two terms sum to a quantity far
+    smaller than either, so a slope near -1 follows by construction.
+
+    Panel (c) puts the radial division against radius directly, with medians over
+    quantile bins and a bootstrap CI, since the trend is otherwise only implied by
+    the colour scale in (a).
+
+    The deviation annotated in (a) and (b) is identically |sum - target|: it
+    measures how well the attributed TOTAL matches gravity, the same quantity
+    @fig-newton-behavioral measures behaviourally, and says nothing about the split.
+
+    Keeping the individual windows matters: a summary over windows cannot show that
+    the cancellation holds window by window, and the tangential component in
+    particular changes sign from window to window.
+
+    Returns a dict with the fitted power law of each term's magnitude against r (not
+    plotted -- @fig-newton-behavioral carries the log-log evidence -- so these are
+    for checking the prose against the run), the median deviation from each
+    constraint line, and the binned radial profile with its CI.
+    """
+    t = kick_terms(content, positional, windows, dt)
+    g = np.linalg.norm(t['grav'], axis=1)
+    ghat = t['grav'] / g[:, None]                        # unit vector toward the sun
+    that = np.stack([-ghat[:, 1], ghat[:, 0]], axis=1)    # perpendicular to it
+    radius = t['radius']
+    vlo, vhi = np.percentile(radius, [2, 98])
+
+    out = {'exponent': {}, 'line_deviation': {}, 'radial_profile': {}}
+    for label, v in [('content', t['content']), ('positional', t['positional']),
+                     ('sum', t['total']), ('ideal gravity', t['grav'])]:
+        out['exponent'][label] = float(
+            np.polyfit(np.log(radius), np.log(np.linalg.norm(v, axis=1)), 1)[0])
+
+    series = [('content residual', t['content'], '#1f77b4', 'o'),
+              ('positional (wpe)', t['positional'], '#9467bd', '^'),
+              ('their sum', t['total'], 'tab:green', 's')]
+
+    # --- (a), (b): the two components against their constraint lines --------------
+    panels = [('radial', ghat, 1.0, '(a) Radial: the pair must sum to 1'),
+              ('tangential', that, 0.0, '(b) Tangential: the pair must sum to 0')]
+    for ax, (name, proj, target, title) in zip(axes[:2], panels):
+        c = (t['content'] * proj).sum(1) / g
+        p = (t['positional'] * proj).sum(1) / g
+        out['line_deviation'][name] = float(np.median(np.abs(c + p - target)))
+
+        lo, hi = np.percentile(np.concatenate([c, p]), [2, 98])
+        pad = 0.15 * (hi - lo)
+        lo, hi = min(lo - pad, -0.2), max(hi + pad, target + 0.2)
+        span = np.linspace(lo, hi, 10)
+
+        ax.plot(span, target - span, '--', color='0.25', lw=1.5,
+                label=fr'sum $= {target:.0f}$  (Newtonian gravity)')
+        sc = ax.scatter(c, p, s=20, alpha=0.8, c=radius, cmap='viridis',
+                        vmin=vlo, vmax=vhi, linewidths=0)
+        ax.axhline(0, color='0.88', lw=0.6); ax.axvline(0, color='0.88', lw=0.6)
+        ax.set_xlim(lo, hi); ax.set_ylim(lo, hi); ax.set_aspect('equal')
+        ax.set_xlabel(r'content residual / $|\mathbf{g}|$')
+        ax.set_ylabel(r'positional (wpe) / $|\mathbf{g}|$')
+        ax.set_title(title, fontsize=11)
+        ax.text(0.03, 0.03,
+                f"median |ELM total $-$ ideal| = {out['line_deviation'][name]:.3f}",
+                transform=ax.transAxes, fontsize=8, va='bottom',
+                bbox=dict(boxstyle='round', fc='white', ec='0.7', alpha=0.85))
+        ax.legend(fontsize=8, loc='upper right')
+    cb = axes[0].figure.colorbar(sc, ax=list(axes[:2]), fraction=0.046, pad=0.03)
+    cb.set_label(r'$|\mathbf{r}_t|$')
+
+    # --- (c): the radial division against radius ---------------------------------
+    ax = axes[2]
+    n_bins = 5
+    edges = np.percentile(radius, np.linspace(0, 100, n_bins + 1))
+    for label, v, colour, marker in series:
+        y = (v * ghat).sum(1) / g
+        ax.scatter(radius, y, s=8, alpha=0.18, color=colour, linewidths=0)
+        cen, med, blo, bhi = [], [], [], []
+        for a, b in zip(edges[:-1], edges[1:]):
+            k = (radius >= a) & (radius < b)
+            if k.sum() < 8:
+                continue
+            yy = y[k]
+            rg = np.random.default_rng(0)
+            boot = np.median(yy[rg.integers(0, len(yy), size=(4000, len(yy)))], axis=1)
+            cen.append(float(np.median(radius[k]))); med.append(float(np.median(yy)))
+            q = np.percentile(boot, [2.5, 97.5]); blo.append(q[0]); bhi.append(q[1])
+        ax.plot(cen, med, '-', color=colour, lw=2, marker=marker, ms=6, label=label)
+        ax.fill_between(cen, blo, bhi, color=colour, alpha=0.22)
+        out['radial_profile'][label] = dict(r=cen, median=med, lo=blo, hi=bhi)
+    ax.axhline(1, color='k', ls='--', lw=1.2)
+    ax.axhline(0, color='0.6', lw=0.8)
+    ax.annotate('ideal kick', (0.02, 1.0), xycoords=('axes fraction', 'data'),
+                textcoords='offset points', xytext=(2, 4), fontsize=8)
+    ax.set_ylim(-1.6, 3.0)
+    ax.set_xlabel(r'$|\mathbf{r}_t|$')
+    ax.set_ylabel(r'radial component / $|\mathbf{g}|$')
+    ax.set_title('(c) Who supplies it, against radius', fontsize=11)
+    ax.legend(fontsize=8, loc='upper left')
+    return out
+
+
+def residual_structure(all_blocks, windows):
+    """Invariant structure of the two deviation-from-inertia blocks.
+
+    dJ_t = J_t - 2I and dJ_(t-1) = J_(t-1) + I.  Each 2x2 block decomposes into
+    four orthogonal parts under the Frobenius inner product -- isotropic d,
+    rotation generator a, and two shears -- of which d, a and the rotation score
+    a^2/(a^2 + shear^2) are invariant under rotation of coordinates, so they
+    describe the operators without reference to a choice of axes.
+
+    Returns a dict of per-window arrays plus the rotation score an unstructured
+    2x2 matrix would give, as a reference point for the score.
+    """
+    I2 = np.eye(2)
+    T = all_blocks.shape[1]
+    dJr = all_blocks[:, T - 1] - 2 * I2
+    dJp = all_blocks[:, T - 2] + I2
+    radius = np.linalg.norm(windows[:, T - 1, :], axis=1)
+    fro = lambda M: np.linalg.norm(M, axis=(1, 2))
+
+    def parts(M):
+        d = 0.5 * (M[:, 0, 0] + M[:, 1, 1])          # isotropic
+        a = 0.5 * (M[:, 1, 0] - M[:, 0, 1])          # rotation generator
+        g1 = 0.5 * (M[:, 0, 0] - M[:, 1, 1])         # shear, axis-aligned
+        g2 = 0.5 * (M[:, 0, 1] + M[:, 1, 0])         # shear, 45 deg
+        return d, a, a ** 2 / (a ** 2 + g1 ** 2 + g2 ** 2 + 1e-30)
+
+    d_r, a_r, s_r = parts(dJr)
+    d_p, a_p, s_p = parts(dJp)
+    rng = np.random.default_rng(0)
+    return dict(dJr=dJr, dJp=dJp, radius=radius,
+                d_r=d_r, a_r=a_r, score_r=s_r, d_p=d_p, a_p=a_p, score_p=s_p,
+                fail=fro(dJp + dJr) / fro(dJr),
+                r2=float(np.corrcoef(dJp.ravel(), (-dJr).ravel())[0, 1] ** 2),
+                score_random=float(np.median(parts(rng.normal(size=(20000, 2, 2)))[2])))
+
+
+def _mirror_scatter(ax, cx, cy, radius, sym, title, vlo, vhi, pct=99, pad=0.10):
+    """Previous-block coefficient against recent-block, with the y = -x reference.
+
+    Square box snug to the data with equal aspect, so the -45 deg
+    (equal-and-opposite) line reads true.  The annotation gives the fitted slope
+    and the median per-window departure, which is what distinguishes the two
+    coefficients: independent auto-scaling would otherwise make both look like
+    clean anti-diagonals.
+    """
+    x0, x1 = np.percentile(cx, [100 - pct, pct]); y0, y1 = np.percentile(cy, [100 - pct, pct])
+    x0, x1 = min(x0, 0), max(x1, 0);              y0, y1 = min(y0, 0), max(y1, 0)
+    side = max(x1 - x0, y1 - y0) * (1 + pad)
+    mx, my = (x0 + x1) / 2, (y0 + y1) / 2
+    xL, xR, yB, yT = mx - side / 2, mx + side / 2, my - side / 2, my + side / 2
+
+    ax.axhline(0, color='0.85', lw=0.6); ax.axvline(0, color='0.85', lw=0.6)
+    span = np.linspace(min(xL, yB), max(xR, yT), 10)
+    ax.plot(span, -span, 'k--', lw=1.2, label='equal-and-opposite')
+    sc = ax.scatter(cx, cy, s=14, alpha=0.6, c=radius, cmap='viridis',
+                    vmin=vlo, vmax=vhi, linewidths=0)
+    ax.set_xlim(xL, xR); ax.set_ylim(yB, yT); ax.set_aspect('equal')
+    ax.set_xlabel(fr'${sym}_t$  (recent block)')
+    ax.set_ylabel(fr'${sym}_{{t-1}}$  (previous block)')
+    ax.set_title(title, fontsize=11)
+    slope = np.polyfit(cx, cy, 1)[0]
+    dep = np.median(np.abs(cx + cy) / np.abs(cx))
+    ax.text(0.04, 0.04, f'slope {slope:+.2f}\ndeparture {dep:.0%}',
+            transform=ax.transAxes, fontsize=9, va='bottom',
+            bbox=dict(boxstyle='round', fc='white', ec='0.7', alpha=0.85))
+    ax.legend(fontsize=8, loc='upper right')
+    return sc, float(slope), float(dep)
+
+
+def plot_residual_structure(axes, all_blocks, windows):
+    """Four panels on the two deviation-from-inertia operators (2x2 axes grid).
+
+    [a] every matrix entry of the previous block against the negative of the
+        corresponding recent-block entry -- the negation, entry by entry.
+    [b] the rotation score of each block, against the value an unstructured 2x2
+        matrix would give: the blocks are scaled rotations, shear negligible.
+    [c] the rotation generator a, previous against recent.
+    [d] the isotropic coefficient d, previous against recent.
+
+    (c) and (d) share a construction but not a conclusion: a is
+    equal-and-opposite across the pair while d is only about half so, which is
+    why each panel reports its fitted slope rather than relying on the eye --
+    the snug per-panel scaling makes both clouds look like anti-diagonals.
+
+    These describe the operators.  They do not describe what the output depends
+    on: dJ_(t-1) acts on r_(t-1), which is several times longer than the step
+    r_t - r_(t-1), so the small residual left by the imperfect negation
+    contributes to the correction on a par with the difference term.
+
+    Returns the dict from residual_structure(), with the fitted slopes added.
+    """
+    st = residual_structure(all_blocks, windows)
+    radius = st['radius']
+    vlo, vhi = np.percentile(radius, [2, 98])
+
+    # --- (a) entry-wise negation -------------------------------------------------
+    ax = axes[0, 0]
+    x = (-st['dJr']).reshape(-1); y = st['dJp'].reshape(-1)
+    lim = 1.05 * max(np.abs(x).max(), np.abs(y).max())
+    ax.plot([-lim, lim], [-lim, lim], 'k--', lw=1.3, label=r'$dJ_{t-1} = -dJ_t$')
+    sc = ax.scatter(x, y, s=7, alpha=0.5, c=np.repeat(radius, 4), cmap='viridis',
+                    vmin=vlo, vmax=vhi, linewidths=0)
+    ax.set_xlim(-lim, lim); ax.set_ylim(-lim, lim); ax.set_aspect('equal')
+    ax.axhline(0, color='0.85', lw=0.5); ax.axvline(0, color='0.85', lw=0.5)
+    ax.set_xlabel(r'$-\,(dJ_t)_{ij}$'); ax.set_ylabel(r'$(dJ_{t-1})_{ij}$')
+    ax.set_title('(a) Every entry: previous $= -$ recent', fontsize=11)
+    ax.text(0.04, 0.88, fr"$R^2 = {st['r2']:.3f}$", transform=ax.transAxes, fontsize=9,
+            bbox=dict(boxstyle='round', fc='white', ec='0.7', alpha=0.85))
+    ax.legend(fontsize=8, loc='lower right')
+
+    # --- (b) the blocks are scaled rotations -------------------------------------
+    # the scores all exceed ~0.97, so a [0, 1] axis collapses them into one bin
+    ax = axes[0, 1]
+    xlo = min(0.95, float(np.percentile(np.r_[st['score_r'], st['score_p']], 0.5)))
+    for key, colour, lab in [('score_r', 'tab:purple', 'recent'),
+                             ('score_p', 'tab:orange', 'previous')]:
+        ax.hist(st[key], bins=40, range=(xlo, 1.0), color=colour, alpha=0.55,
+                label=f"{lab} (median {np.median(st[key]):.3f})")
+    ax.axvline(1, color='k', ls='--', lw=1, label='pure rotation')
+    ax.set_xlim(xlo, 1.0 + 0.02 * (1.0 - xlo))
+    ax.annotate(f"an unstructured $2\\times2$ matrix\nwould sit at {st['score_random']:.2f},\n"
+                "far off-scale to the left",
+                xy=(0.03, 0.60), xycoords='axes fraction', fontsize=7.5, color='tab:red')
+    ax.set_xlabel(r'rotation score  $a^2/(a^2+\mathrm{shear}^2)$')
+    ax.set_ylabel('windows')
+    ax.set_title('(b) Each block is a near-pure scaled rotation', fontsize=11)
+    ax.legend(fontsize=7.5, loc='upper left')
+
+    # --- (c), (d) the two invariant coefficients, one panel each ------------------
+    sc, st['slope_a'], st['dep_a'] = _mirror_scatter(
+        axes[1, 0], st['a_r'], st['a_p'], radius, 'a',
+        '(c) Rotation generators are equal-and-opposite', vlo, vhi)
+    sc, st['slope_d'], st['dep_d'] = _mirror_scatter(
+        axes[1, 1], st['d_r'], st['d_p'], radius, 'd',
+        '(d) Isotropic coefficients only about half so', vlo, vhi)
+
+    cb = axes[0, 0].figure.colorbar(sc, ax=axes.ravel().tolist(), fraction=0.030, pad=0.02)
+    cb.set_label(r'$|\mathbf{r}_t|$')
+    return st
+
+
 def reconstruction_scatter(model, block_size, n_windows, seed=0, offset=0):
     """ELM reconstruction check for the LAST output token, over sampled windows.
 
@@ -339,15 +628,21 @@ def rotation_channel_decomposition(model, block_size, n_windows, seed=0, offset=
 
 
 def rollout(model, seed, n_steps):
-    """Autoregressive rollout of a block_size=2 model from two seed positions.
+    """Autoregressive rollout from a seed prefix, sliding a block_size window.
 
-    `seed` is a (2, 2) array of the first two positions; feeds the model its own
-    predictions and returns the (n_steps+2, 2) generated trajectory.
+    `seed` is a (k, D) array of k >= 1 initial positions.  Each step feeds the model
+    the last block_size points available (all of them while fewer than block_size
+    have accumulated) and appends the prediction -- the same sliding-window
+    generation Liu et al. use, so models of different context length can be rolled
+    out from an identical seed and compared.  Returns the (k + n_steps, D) trajectory.
+
+    For a block_size=2 model this is exactly "feed the last two points".
     """
+    bs = model.config.block_size
     dt = next(model.parameters()).dtype
-    traj = [np.asarray(seed[0], float), np.asarray(seed[1], float)]
+    traj = [np.asarray(p, float) for p in np.asarray(seed)]
     for _ in range(n_steps):
-        win = torch.tensor(np.stack(traj[-2:]), dtype=dt).unsqueeze(0)
+        win = torch.tensor(np.stack(traj[-bs:]), dtype=dt).unsqueeze(0)
         with torch.no_grad():
             traj.append(model(win)[0][0, -1].double().numpy())
     return np.array(traj)
@@ -505,12 +800,16 @@ def rotation_behavioral(model, block_size, n_windows, seed=0,
     dr_true = np.linalg.norm(truth, axis=1) - rmag   # true per-step radius change
     dr_model = np.linalg.norm(pred, axis=1) - rmag   # model's per-step radius change
 
-    # Specific angular momentum L_z = r x v (z-component), from the in-window
-    # velocity estimate v = r_t - r_{t-1}. At fixed radius the true per-step
-    # angle scales with L; it is the hidden axis behind the dtheta-vs-1/r^2
+    # Specific angular momentum TIMES the sample spacing, L_z * dt.  The data
+    # carries positions only, so there is no velocity to cross with r_t; we use
+    # the in-window backward displacement d = r_t - r_{t-1} = v dt + O(dt^2),
+    # making r_t x d a first-order estimate of L_z * dt, not of L_z itself.
+    # That is the natural quantity here anyway: Kepler's 2nd law in per-step
+    # form reads dtheta = (L_z dt) / r^2, so L_z * dt is exactly the numerator
+    # of the per-step angle -- the hidden axis behind the dtheta-vs-1/r^2
     # scatter (constant-L orbits trace constant-slope rays).
-    vel = r_t - windows[:, -2, :]
-    Lz = r_t[:, 0] * vel[:, 1] - r_t[:, 1] * vel[:, 0]
+    disp = r_t - windows[:, -2, :]
+    Lz_dt = r_t[:, 0] * disp[:, 1] - r_t[:, 1] * disp[:, 0]
 
     def r2(p, y):
         return float(1 - ((p - y) ** 2).sum() / ((y - y.mean(0)) ** 2).sum())
@@ -530,7 +829,7 @@ def rotation_behavioral(model, block_size, n_windows, seed=0,
         # Kepler-2 angular tracking + radial breathing
         'inv_r2': inv_r2,
         'dr_true': dr_true, 'dr_model': dr_model,
-        'Lz': Lz,
+        'Lz_dt': Lz_dt,     # = L_z * dt (first order); see comment above
         'kepler2_corr_true': float(np.corrcoef(ang_true, inv_r2)[0, 1]),
         'kepler2_corr_model': float(np.corrcoef(ang_model, inv_r2)[0, 1]),
         'dr_corr': float(np.corrcoef(dr_model, dr_true)[0, 1]),
@@ -606,16 +905,16 @@ def plot_kepler2(block_size, behav):
     # true points coloured by angular momentum L: constant-L orbits trace
     # constant-slope rays, so the "scatter" resolves into L-ordered bands --
     # showing it is the hidden L axis, not randomness.
-    Lz = behav['Lz']
-    vlo = float(np.nanpercentile(Lz, 2)); vhi = float(np.nanpercentile(Lz, 98))
+    Lz_dt = behav['Lz_dt']
+    vlo = float(np.nanpercentile(Lz_dt, 2)); vhi = float(np.nanpercentile(Lz_dt, 98))
     sc = ax.scatter(behav['inv_r2'], np.degrees(behav['ang_true']), s=12,
-                    alpha=0.6, c=Lz, cmap='viridis', vmin=vlo, vmax=vhi,
+                    alpha=0.6, c=Lz_dt, cmap='viridis', vmin=vlo, vmax=vhi,
                     label=f"true, coloured by L  (corr w/ $1/r^2$ {behav['kepler2_corr_true']:.2f})")
     ax.scatter(behav['inv_r2'], np.degrees(behav['ang_model']), s=6, alpha=0.5,
                color='#FFB347', marker='.',
                label=f"model  (corr w/ $1/r^2$ {behav['kepler2_corr_model']:.2f})")
     cb = fig.colorbar(sc, ax=ax)
-    cb.set_label(r'angular momentum  $L_z = r_t \times v$')
+    cb.set_label(r'$L_z\,\Delta t = r_t \times (r_t - r_{t-1})$')
     ax.set_xlabel(r'$1/r_t^2$')
     ax.set_ylabel('per-step angle (deg)')
     ax.set_title(f"Kepler's 2nd law: angle $\\propto L/r^2$ (block_size={block_size})\n"

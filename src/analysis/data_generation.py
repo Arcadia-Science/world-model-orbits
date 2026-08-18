@@ -58,9 +58,17 @@ def generate_kepler_trajectory(eccentricity=0.5, semi_major_axis=1.0, angle=0.0,
         semi_major_axis: Semi-major axis of the ellipse
         angle: Initial angle of the orbit
         GM: Gravitational parameter (mass of sun * gravitational constant)
-        dt: Time step
+        dt: Nominal time step.  CAUTION: this is not the spacing of the returned
+            samples.  We keep Liu et al.'s t_eval (see below), which spreads
+            num_points samples across [0, num_points*dt], so consecutive samples
+            are num_points*dt/(num_points-1) apart -- 20/99 ~ 0.202 rather than
+            0.2 at the defaults, 1% wider.  Any analysis that compares model
+            behaviour against a physical formula must use the true spacing; the
+            notebooks define it once as DT.  Reproduced as-is for comparability
+            with the original work, not fixed, since the released checkpoints
+            were trained on data sampled this way.
         num_points: Number of points in the trajectory
-    
+
     Returns:
         positions: array of shape (num_points, 2) with (x, y) positions
         velocities: array of shape (num_points, 2) with (vx, vy) velocities
