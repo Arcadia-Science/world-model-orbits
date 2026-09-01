@@ -1,1 +1,1 @@
-Sitemap: https://Arcadia-Science.github.io/notebook-pub-template/sitemap.xml
+Sitemap: https://Arcadia-Science.github.io/2026-world-model-orbits/sitemap.xml
