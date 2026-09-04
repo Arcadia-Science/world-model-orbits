@@ -165,8 +165,8 @@ def plot_term_magnitudes(ax, content, positional, radius):
     y_mag = nrm(content.sum(1) + positional)
 
     series = [
-        (r'$J_{\rm prev}\,\mathbf{r}_{t-1}$',   nrm(content[:, T - 2])),
-        (r'$J_{\rm recent}\,\mathbf{r}_{t}$',   nrm(content[:, T - 1])),
+        (r'$J_{t-1}\,\mathbf{r}_{t-1}$',        nrm(content[:, T - 2])),
+        (r'$J_t\,\mathbf{r}_t$',                nrm(content[:, T - 1])),
         (r'positional (wpe)',                   nrm(positional)),
     ]
     for (label, mag), colour in zip(series, _TERM_COLOURS):
@@ -175,7 +175,7 @@ def plot_term_magnitudes(ax, content, positional, radius):
 
     cancellation = np.median(sum(mag for _, mag in series) / y_mag)
     ax.text(0.03, 0.03,
-            r'$\sum|{\rm term}|\,/\,|y|$ = ' + f'{cancellation:.2f}'
+            r'$\sum|\text{term}|\,/\,|\hat{\mathbf{r}}_{t+1}|$ = ' + f'{cancellation:.2f}'
             + '\n(1.0 = terms add, >1 = they cancel)',
             transform=ax.transAxes, fontsize=8, va='bottom',
             bbox=dict(boxstyle='round', fc='white', ec='0.7', alpha=0.85))
@@ -435,12 +435,12 @@ def plot_residual_structure(axes, all_blocks, windows):
     ax = axes[0, 0]
     x = (-st['dJr']).reshape(-1); y = st['dJp'].reshape(-1)
     lim = 1.05 * max(np.abs(x).max(), np.abs(y).max())
-    ax.plot([-lim, lim], [-lim, lim], 'k--', lw=1.3, label=r'$dJ_{t-1} = -dJ_t$')
+    ax.plot([-lim, lim], [-lim, lim], 'k--', lw=1.3, label=r'$\mathrm{d}J_{t-1} = -\mathrm{d}J_t$')
     sc = ax.scatter(x, y, s=7, alpha=0.5, c=np.repeat(radius, 4), cmap='viridis',
                     vmin=vlo, vmax=vhi, linewidths=0)
     ax.set_xlim(-lim, lim); ax.set_ylim(-lim, lim); ax.set_aspect('equal')
     ax.axhline(0, color='0.85', lw=0.5); ax.axvline(0, color='0.85', lw=0.5)
-    ax.set_xlabel(r'$-\,(dJ_t)_{ij}$'); ax.set_ylabel(r'$(dJ_{t-1})_{ij}$')
+    ax.set_xlabel(r'$-\,(\mathrm{d}J_t)_{ij}$'); ax.set_ylabel(r'$(\mathrm{d}J_{t-1})_{ij}$')
     ax.set_title('(a) Every entry: previous $= -$ recent', fontsize=11)
     ax.text(0.04, 0.88, fr"$R^2 = {st['r2']:.3f}$", transform=ax.transAxes, fontsize=9,
             bbox=dict(boxstyle='round', fc='white', ec='0.7', alpha=0.85))
@@ -469,7 +469,7 @@ def plot_residual_structure(axes, all_blocks, windows):
         axes[1, 0], st['a_r'], st['a_p'], radius, 'a',
         '(c) Rotation generators are equal-and-opposite', vlo, vhi)
     sc, st['slope_d'], st['dep_d'] = _mirror_scatter(
-        axes[1, 1], st['d_r'], st['d_p'], radius, 'd',
+        axes[1, 1], st['d_r'], st['d_p'], radius, 'c',
         '(d) Isotropic coefficients only about half so', vlo, vhi)
 
     cb = axes[0, 0].figure.colorbar(sc, ax=axes.ravel().tolist(), fraction=0.030, pad=0.02)

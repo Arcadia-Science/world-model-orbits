@@ -183,3 +183,6 @@ cython_debug/
 /data_cv/
 /checkpoints/
 /results/
+
+# Prose exports for text editing (regenerate with `make draft`)
+draft_export/
