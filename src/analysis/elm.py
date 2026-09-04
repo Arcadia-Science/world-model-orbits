@@ -100,8 +100,8 @@ def collect_terms(model, block_size, n_windows, seed=0, offset=0):
 # Checked for colourblind separation (worst adjacent pair dE 24.6 protan).
 _TERM_COLOURS = ('#ff7f0e', '#1f77b4', '#9467bd')     # prev, recent, positional
 
-# Arcadia palette. Kept here rather than taken from `arcadia_pycolor` because the
-# analysis environment does not install it -- see env-minimal.yml.
+# Arcadia palette. Kept here rather than taken from `arcadia_pycolor`, which the
+# environment does not install -- see env.yml.
 ARC_SLATE = '#403F4C'   # axes, text
 ARC_VIBE  = '#5088C5'   # primary scatter
 ARC_CORAL = '#F28360'   # fit line
