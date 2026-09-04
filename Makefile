@@ -26,6 +26,13 @@ execute:
 	# This will populate `_freeze/index/` with pre-computed results.
 	quarto render index.ipynb --execute
 
+.PHONY: draft
+draft:
+	# Export notebook prose + figures to draft_export/*.docx for text editing.
+	# Edit the prose in Word, then paste it back into the notebook cell named
+	# by the [[cell N]] marker above each block.
+	python export_draft.py index.ipynb
+
 .PHONY: preview
 preview:
 	quarto preview

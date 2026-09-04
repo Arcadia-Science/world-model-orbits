@@ -386,6 +386,37 @@ def train_model(model, train_inputs, train_targets, test_inputs, test_targets, t
     }
 
 
+def _rollout_error_stats(generated_np, trajectories, conditioning_length, num_trajectories):
+    """Position error and per-trajectory R^2 for a generated rollout.
+
+    Shared tail of `generate_trajectory_and_compute_error`: the two generation
+    strategies (sliding window vs `model.generate`) differ only in how they produce
+    `generated_np`, and score it identically from here on.
+
+    Both arrays keep their conditioning prefix, which is dropped here, and the
+    two are then clipped to a common length in case generation ran short.
+
+    Returns (position_errors_mean, all_position_errors, all_r2_x, all_r2_y).
+    """
+    # Drop the conditioning prefix from both, then align in case of length mismatch
+    generated_only = generated_np[:, conditioning_length:, :]
+    true_generated = trajectories[:, conditioning_length:, :]
+    min_len = min(generated_only.shape[1], true_generated.shape[1])
+    generated_aligned = generated_only[:, :min_len, :]
+    true_aligned = true_generated[:, :min_len, :]
+
+    position_errors = np.sqrt(np.sum((generated_aligned - true_aligned) ** 2, axis=2))
+    all_position_errors = position_errors.flatten()
+    position_errors_mean = np.mean(position_errors, axis=0)   # (min_len,)
+
+    all_r2_x, all_r2_y = [], []
+    for traj_idx in range(num_trajectories):
+        all_r2_x.append(r2_score(true_aligned[traj_idx, :, 0], generated_aligned[traj_idx, :, 0]))
+        all_r2_y.append(r2_score(true_aligned[traj_idx, :, 1], generated_aligned[traj_idx, :, 1]))
+
+    return position_errors_mean, all_position_errors, all_r2_x, all_r2_y
+
+
 def generate_trajectory_and_compute_error(model, inputs, trajectories, conditioning_length=50, block_size=None):
     """
     Generate trajectory continuation using the model for all trajectories.
@@ -437,35 +468,11 @@ def generate_trajectory_and_compute_error(model, inputs, trajectories, condition
             # Clear GPU tensor
             del generated_seq
 
-            # Extract only the generated portion (exclude conditioning_length)
-            generated_only = generated_np[:, conditioning_length:, :]  # (num_trajectories, num_steps_to_generate, 2)
+            position_errors_mean, all_position_errors, all_r2_x, all_r2_y = \
+                _rollout_error_stats(generated_np, true_trajectories_np,
+                                     conditioning_length, num_trajectories)
 
-            # Extract the corresponding true trajectory portion (also exclude conditioning_length)
-            true_generated = true_trajectories_np[:, conditioning_length:, :]  # (num_trajectories, num_steps_to_generate, 2)
-
-            # Calculate errors only on the generated portion (not conditioning)
-            # Align sequences in case of length mismatch
-            min_len = min(generated_only.shape[1], true_generated.shape[1])
-            generated_aligned = generated_only[:, :min_len, :]  # (num_trajectories, min_len, 2)
-            true_aligned = true_generated[:, :min_len, :]  # (num_trajectories, min_len, 2)
-
-            # Compute position errors for all trajectories
-            position_errors = np.sqrt(np.sum((generated_aligned - true_aligned)**2, axis=2))  # (num_trajectories, min_len)
-            all_position_errors = position_errors.flatten()  # Flatten to get all errors
-            # Compute mean across trajectories before deleting
-            position_errors_mean = np.mean(position_errors, axis=0)  # (min_len,)
-
-            # Compute R² scores for each trajectory
-            all_r2_x = []
-            all_r2_y = []
-            for traj_idx in range(num_trajectories):
-                r2_x = r2_score(true_aligned[traj_idx, :, 0], generated_aligned[traj_idx, :, 0])
-                r2_y = r2_score(true_aligned[traj_idx, :, 1], generated_aligned[traj_idx, :, 1])
-                all_r2_x.append(r2_x)
-                all_r2_y.append(r2_y)
-
-            # Clear intermediate variables
-            del generated_np, true_trajectories_np, generated_only, true_generated, generated_aligned, true_aligned, position_errors
+            del generated_np, true_trajectories_np
             clear_gpu_cache()
     else:
         # Standard generation (block_size >= num_points_per_trajectory)
@@ -489,36 +496,11 @@ def generate_trajectory_and_compute_error(model, inputs, trajectories, condition
             # Clear GPU tensor
             del generated_seq, conditioning_seq
 
-            # Extract only the generated portion (exclude conditioning_length)
-            # The generated_seq includes conditioning + generated, so we take only the generated part
-            generated_only = generated_np[:, conditioning_length:, :]  # (num_trajectories, num_steps_to_generate, 2)
+            position_errors_mean, all_position_errors, all_r2_x, all_r2_y = \
+                _rollout_error_stats(generated_np, true_trajectories_np,
+                                     conditioning_length, num_trajectories)
 
-            # Extract the corresponding true trajectory portion (also exclude conditioning_length)
-            true_generated = true_trajectories_np[:, conditioning_length:, :]  # (num_trajectories, num_steps_to_generate, 2)
-
-            # Calculate errors only on the generated portion (not conditioning)
-            # Align sequences in case of length mismatch
-            min_len = min(generated_only.shape[1], true_generated.shape[1])
-            generated_aligned = generated_only[:, :min_len, :]  # (num_trajectories, min_len, 2)
-            true_aligned = true_generated[:, :min_len, :]  # (num_trajectories, min_len, 2)
-
-            # Compute position errors for all trajectories
-            position_errors = np.sqrt(np.sum((generated_aligned - true_aligned)**2, axis=2))  # (num_trajectories, min_len)
-            all_position_errors = position_errors.flatten()  # Flatten to get all errors
-            # Compute mean across trajectories before deleting
-            position_errors_mean = np.mean(position_errors, axis=0)  # (min_len,)
-
-            # Compute R² scores for each trajectory
-            all_r2_x = []
-            all_r2_y = []
-            for traj_idx in range(num_trajectories):
-                r2_x = r2_score(true_aligned[traj_idx, :, 0], generated_aligned[traj_idx, :, 0])
-                r2_y = r2_score(true_aligned[traj_idx, :, 1], generated_aligned[traj_idx, :, 1])
-                all_r2_x.append(r2_x)
-                all_r2_y.append(r2_y)
-
-            # Clear intermediate variables
-            del generated_np, true_trajectories_np, generated_only, true_generated, generated_aligned, true_aligned, position_errors
+            del generated_np, true_trajectories_np
             clear_gpu_cache()
 
     # Aggregate statistics

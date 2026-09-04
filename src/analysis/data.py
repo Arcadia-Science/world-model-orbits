@@ -14,10 +14,19 @@ windows. See `data_generation` for how the dataset is produced.
 # training script. Full attribution in NOTICE.md.
 # ---------------------------------------------------------------------------
 
+import io
 import os
+import math
+import contextlib
 import importlib.util
 import numpy as np
 import torch
+
+# Points per trajectory in the generated dataset -- matches the `num_points`
+# default in `data_generation`. Only used to estimate how many trajectories to
+# load before one is available to measure; every windowing decision after that
+# reads the real length off the array.
+POINTS_PER_TRAJECTORY = 100
 
 
 def load_trajectories(data_dir='data_cv', num_trajectories_needed=None):
@@ -185,6 +194,51 @@ def chop_trajectories_into_sequences(trajectories, block_size, seed=None, target
     targets = np.array(all_targets)  # (num_sequences, 1, 2)
 
     return inputs, targets
+
+
+def sample_windows(trajectories, block_size, n_windows, seed=0):
+    """Chop trajectories into windows and draw `n_windows` distinct ones.
+
+    The effective block size is capped at num_points - 1, so a block_size at or
+    above the trajectory length still yields windows: chopping needs one point
+    beyond the window to carve a next-step target, which is discarded here.
+
+    Windows are returned in the trajectories' own dtype -- the callers differ on
+    whether they want float64, so the cast is left to them.
+
+    Returns:
+        windows   (n, eff_block_size, C)  n = min(n_windows, windows available)
+        traj_idx  (n,)                    index of each window's source trajectory
+    """
+    n_points = trajectories.shape[1]
+    eff_block_size = min(block_size, n_points - 1)
+    inputs, _ = chop_trajectories_into_sequences(trajectories, eff_block_size, seed=seed)
+    seqs_per_traj = max(1, n_points // eff_block_size)
+    traj_idx = np.arange(len(inputs)) // seqs_per_traj
+    rng = np.random.default_rng(seed)
+    sel = rng.choice(len(inputs), size=min(n_windows, len(inputs)), replace=False)
+    return inputs[sel], traj_idx[sel]
+
+
+def sample_orbit_windows(block_size, n_windows, seed=0, data_dir='data_cv', offset=0):
+    """Load real trajectories from disk and sample distinct windows from them.
+
+    Loads only as many trajectories as the requested window count needs, then
+    defers to `sample_windows`.
+
+    offset: skip this many trajectories before sampling. Training splits the
+        dataset 50/50 by trajectory (train = first half, test = second half), so
+        pass offset=0 for train orbits (default) and offset=train_size (e.g.
+        10000) to analyse held-out test orbits instead.
+    """
+    seqs_per_traj = max(1, POINTS_PER_TRAJECTORY // block_size)
+    n_traj_need = max(50, math.ceil(n_windows / seqs_per_traj) + 5)
+    with contextlib.redirect_stdout(io.StringIO()):
+        trajs = load_trajectories(data_dir, num_trajectories_needed=offset + n_traj_need)
+        trajs = trajs[offset:]   # keep only the requested split's trajectories
+        assert trajs.shape[0] > 0, f"offset={offset} exceeds available trajectories"
+        windows, _ = sample_windows(trajs, block_size, n_windows, seed=seed)
+    return windows   # (n_windows, block_size, 2)
 
 
 def load_orbital_params(data_dir='data_cv', num_trajectories_needed=None):

@@ -19,7 +19,7 @@ import torch
 from sklearn.linear_model import LinearRegression
 from sklearn.metrics import r2_score
 
-from .data import chop_trajectories_into_sequences
+from .data import sample_windows
 
 
 def setup_activation_hooks(model):
@@ -199,240 +199,119 @@ def collect_activations(model, inputs, targets, activation_dict):
     return predictions, gravitational_force
 
 
-def run_linear_probes(activation_dict, gravitational_force):
-    """
-    Run linear probes to test if intermediate representations contain
-    linear directions corresponding to gravitational force.
+def _fit_r2(activations, targets):
+    """In-sample R^2 of a least-squares linear readout of `targets` from `activations`."""
+    probe = LinearRegression().fit(activations, targets)
+    return r2_score(targets, probe.predict(activations))
+
+
+def _probe_layers(activation_dict, make_targets):
+    """Fit linear probes for a set of targets at every hooked site.
+
+    The probing protocol is the same whatever is being decoded -- for each layer,
+    read the activations two ways (every position, and the last position only) and
+    score a least-squares readout of each target against both. Only how the targets
+    are assembled differs, which is what `make_targets` supplies.
+
+    Scoring is in-sample, matching the protocol this replicates; see
+    `run_linear_probes` for why.
+
+    Args:
+        activation_dict: layer name -> (batch, time, features) activations
+        make_targets:    (batch_size, time_steps) -> {name: (values_flat, values_last)},
+                         where values_flat is per (batch*time) and values_last per batch
 
     Returns:
-        probe_results: dictionary mapping layer names to probe results
+        {layer_name: {target_name: {'r2': ..., 'r2_last': ...}}}
     """
     probe_results = {}
-
     for layer_name, activations in activation_dict.items():
-        # Flatten activations: (batch, time, features) -> (batch*time, features)
-        # Move to CPU if on GPU before converting to numpy
+        # (batch, time, features) -> every position, then the last position only
         act_flat = activations.reshape(-1, activations.shape[-1]).cpu().numpy()
-
-        # Extract last state activations: (batch, time, features) -> (batch, features)
         batch_size, time_steps, _ = activations.shape
-        act_last = activations[:, -1, :].cpu().numpy()  # (batch, features)
+        act_last = activations[:, -1, :].cpu().numpy()
 
-        # Probe for different gravitational force components
-        probes = {}
-
-        # Define probe targets
-        probe_targets = [
-            'F_magnitude', 'F_direction_x', 'F_direction_y', 'Fx', 'Fy',
-            'r', 'inv_r', 'r_squared', 'inv_r_squared', 'inv_r_cubed', 'x', 'y'
-        ]
-
-        for probe_name in probe_targets:
-            # Reshape gravitational force back to (batch, time) to extract last timestep
-            force_reshaped = gravitational_force[probe_name].reshape(batch_size, time_steps)
-            force_last = force_reshaped[:, -1]  # (batch,)
-            force_flat = gravitational_force[probe_name]  # Already flattened
-
-            # Probe on all positions
-            probe = LinearRegression()
-            probe.fit(act_flat, force_flat)
-            pred = probe.predict(act_flat)
-            r2_all = r2_score(force_flat, pred)
-
-            # Probe on last states only
-            probe_last = LinearRegression()
-            probe_last.fit(act_last, force_last)
-            pred_last = probe_last.predict(act_last)
-            r2_last = r2_score(force_last, pred_last)
-
-            probes[probe_name] = {'r2': r2_all, 'r2_last': r2_last}
-
-        probe_results[layer_name] = probes
-
-    # Print results - DISABLED for cleaner training output
-    # All probe results are still computed and saved for later analysis
-    # print("\nLinear Probe Results (R² scores):")
-    # print("=" * 80)
-    # for layer_name, probes in probe_results.items():
-    #     print(f"\n{layer_name}:")
-    #     for probe_name, result in probes.items():
-    #         print(f"  {probe_name:20s}: R² (all) = {result['r2']:.4f}, R² (last) = {result['r2_last']:.4f}")
-
+        probe_results[layer_name] = {
+            name: {'r2': _fit_r2(act_flat, y_flat), 'r2_last': _fit_r2(act_last, y_last)}
+            for name, (y_flat, y_last) in make_targets(batch_size, time_steps).items()
+        }
     return probe_results
+
+
+# Newtonian targets: the force itself, its direction, and the radial quantities it
+# is built from -- the last of which act as a sanity floor on the force result.
+FORCE_TARGETS = ['F_magnitude', 'F_direction_x', 'F_direction_y', 'Fx', 'Fy',
+                 'r', 'inv_r', 'r_squared', 'inv_r_squared', 'inv_r_cubed', 'x', 'y']
+
+# Keplerian targets: whole-orbit geometry, constant along a trajectory.
+GEOMETRY_TARGETS = ['e', 'a', 'b', 'c', 'average_radius', 'LRL_x', 'LRL_y',
+                    'LRL_magnitude', 'LRL_angle', 'n_x', 'n_y']
+
+
+def run_linear_probes(activation_dict, gravitational_force):
+    """Probe every hooked site for the Newtonian force variables.
+
+    Scoring is in-sample, and deliberately so: this replicates the protocol of
+    Liu et al., which fits and scores on the same activations with no held-out
+    split. The targets vary per position, so the last-position values are read
+    straight out of the flattened array.
+    """
+    def make_targets(batch_size, time_steps):
+        targets = {}
+        for name in FORCE_TARGETS:
+            values_flat = gravitational_force[name]
+            values_last = values_flat.reshape(batch_size, time_steps)[:, -1]
+            targets[name] = (values_flat, values_last)
+        return targets
+
+    return _probe_layers(activation_dict, make_targets)
 
 
 def run_geometry_probes(activation_dict, orbital_params, trajectory_indices):
-    """
-    Run linear probes to test if intermediate representations contain
-    linear directions corresponding to orbital geometry parameters.
+    """Probe every hooked site for the Keplerian orbital-geometry parameters.
+
+    Unlike the force variables, these are properties of the whole orbit and so are
+    constant along a trajectory: each window's value is its source trajectory's, and
+    the flattened form is that value repeated across the window's positions.
 
     Args:
-        activation_dict: dictionary of activations from the model
-        orbital_params: list of dicts with keys: e, a, b, c, average_radius
-        trajectory_indices: array of trajectory indices corresponding to each activation
-
-    Returns:
-        probe_results: dictionary mapping layer names to probe results
+        activation_dict:    layer name -> (batch, time, features) activations
+        orbital_params:     list of dicts, one per trajectory (keys: e, a, b, c, ...)
+        trajectory_indices: source trajectory of each activation row. Indices outside
+                            the orbital_params table score as 0.0 rather than raising,
+                            since callers may probe more windows than there are entries.
     """
-    probe_results = {}
+    n_params = len(orbital_params)
 
-    # Extract orbital parameters for the trajectories we're probing
-    # orbital_params is a list, trajectory_indices maps sequence indices to trajectory indices
-    # When trajectories are chopped, multiple sequences map to the same trajectory
-    # We need to map each activation to its corresponding orbital parameter
+    def gather(key):
+        return np.array([
+            orbital_params[i].get(key, 0.0) if 0 <= i < n_params else 0.0
+            for i in trajectory_indices
+        ])
 
-    # Create a mapping from trajectory index to orbital parameter
-    traj_to_params = {}
-    for idx, params in enumerate(orbital_params):
-        traj_to_params[idx] = params
+    values = {key: gather(key) for key in GEOMETRY_TARGETS}
+    # Reciprocal axis lengths: a Keplerian model that encodes the orbit scale may
+    # do so through 1/a rather than a (the mean motion goes as a^-3/2).
+    values['1/a']   = 1.0 / values['a']
+    values['1/a^2'] = 1.0 / values['a'] ** 2
+    values['1/b']   = 1.0 / values['b']
+    values['1/b^2'] = 1.0 / values['b'] ** 2
 
-    # For each activation, we need to know which trajectory it came from
-    # The trajectory_indices array tells us this
+    def make_targets(batch_size, time_steps):
+        return {name: (np.repeat(v, time_steps), v) for name, v in values.items()}
 
-    # Extract orbital parameter values for each trajectory
-    e_values = np.array([traj_to_params.get(i, {}).get('e', 0.0) for i in trajectory_indices])
-    a_values = np.array([traj_to_params.get(i, {}).get('a', 0.0) for i in trajectory_indices])
-    b_values = np.array([traj_to_params.get(i, {}).get('b', 0.0) for i in trajectory_indices])
-    c_values = np.array([traj_to_params.get(i, {}).get('c', 0.0) for i in trajectory_indices])
-    avg_radius_values = np.array([traj_to_params.get(i, {}).get('average_radius', 0.0) for i in trajectory_indices])
-    LRL_x_values = np.array([traj_to_params.get(i, {}).get('LRL_x', 0.0) for i in trajectory_indices])
-    LRL_y_values = np.array([traj_to_params.get(i, {}).get('LRL_y', 0.0) for i in trajectory_indices])
-    LRL_magnitude_values = np.array([traj_to_params.get(i, {}).get('LRL_magnitude', 0.0) for i in trajectory_indices])
-    LRL_angle_values = np.array([traj_to_params.get(i, {}).get('LRL_angle', 0.0) for i in trajectory_indices])
-    n_x_values = np.array([traj_to_params.get(i, {}).get('n_x', 0.0) for i in trajectory_indices])
-    n_y_values = np.array([traj_to_params.get(i, {}).get('n_y', 0.0) for i in trajectory_indices])
-
-    for layer_name, activations in activation_dict.items():
-        # Flatten activations: (batch, time, features) -> (batch*time, features)
-        # Move to CPU if on GPU before converting to numpy
-        act_flat = activations.reshape(-1, activations.shape[-1]).cpu().numpy()
-
-        # Extract last state activations: (batch, time, features) -> (batch, features)
-        batch_size, time_steps, _ = activations.shape
-        act_last = activations[:, -1, :].cpu().numpy()  # (batch, features)
-
-        # For orbital parameters, we need to repeat the trajectory-level values
-        # for each time step in the activation
-        # Repeat each trajectory's orbital parameter for all time steps
-        e_flat = np.repeat(e_values, time_steps)
-        a_flat = np.repeat(a_values, time_steps)
-        b_flat = np.repeat(b_values, time_steps)
-        c_flat = np.repeat(c_values, time_steps)
-        avg_radius_flat = np.repeat(avg_radius_values, time_steps)
-        LRL_x_flat = np.repeat(LRL_x_values, time_steps)
-        LRL_y_flat = np.repeat(LRL_y_values, time_steps)
-        LRL_magnitude_flat = np.repeat(LRL_magnitude_values, time_steps)
-        LRL_angle_flat = np.repeat(LRL_angle_values, time_steps)
-        n_x_flat = np.repeat(n_x_values, time_steps)
-        n_y_flat = np.repeat(n_y_values, time_steps)
-        # Compute inverse values
-        inv_a_flat = np.repeat(1.0 / a_values, time_steps)
-        inv_a2_flat = np.repeat(1.0 / (a_values ** 2), time_steps)
-        inv_b_flat = np.repeat(1.0 / b_values, time_steps)
-        inv_b2_flat = np.repeat(1.0 / (b_values ** 2), time_steps)
-
-        # For last states, orbital parameters are just the trajectory values (not repeated)
-        e_last = e_values
-        a_last = a_values
-        b_last = b_values
-        c_last = c_values
-        avg_radius_last = avg_radius_values
-        LRL_x_last = LRL_x_values
-        LRL_y_last = LRL_y_values
-        LRL_magnitude_last = LRL_magnitude_values
-        LRL_angle_last = LRL_angle_values
-        n_x_last = n_x_values
-        n_y_last = n_y_values
-        inv_a_last = 1.0 / a_values
-        inv_a2_last = 1.0 / (a_values ** 2)
-        inv_b_last = 1.0 / b_values
-        inv_b2_last = 1.0 / (b_values ** 2)
-
-        # Probe for different orbital geometry parameters
-        probes = {}
-
-        # Define probe targets
-        probe_targets = ['e', 'a', 'b', 'c', 'average_radius', 'LRL_x', 'LRL_y', 'LRL_magnitude', 'LRL_angle', 'n_x', 'n_y',
-                         '1/a', '1/a^2', '1/b', '1/b^2']
-        probe_values_flat = {
-            'e': e_flat,
-            'a': a_flat,
-            'b': b_flat,
-            'c': c_flat,
-            'average_radius': avg_radius_flat,
-            'LRL_x': LRL_x_flat,
-            'LRL_y': LRL_y_flat,
-            'LRL_magnitude': LRL_magnitude_flat,
-            'LRL_angle': LRL_angle_flat,
-            'n_x': n_x_flat,
-            'n_y': n_y_flat,
-            '1/a': inv_a_flat,
-            '1/a^2': inv_a2_flat,
-            '1/b': inv_b_flat,
-            '1/b^2': inv_b2_flat
-        }
-        probe_values_last = {
-            'e': e_last,
-            'a': a_last,
-            'b': b_last,
-            'c': c_last,
-            'average_radius': avg_radius_last,
-            'LRL_x': LRL_x_last,
-            'LRL_y': LRL_y_last,
-            'LRL_magnitude': LRL_magnitude_last,
-            'LRL_angle': LRL_angle_last,
-            'n_x': n_x_last,
-            'n_y': n_y_last,
-            '1/a': inv_a_last,
-            '1/a^2': inv_a2_last,
-            '1/b': inv_b_last,
-            '1/b^2': inv_b2_last
-        }
-
-        for probe_name in probe_targets:
-            # Probe on all positions
-            probe = LinearRegression()
-            probe.fit(act_flat, probe_values_flat[probe_name])
-            pred = probe.predict(act_flat)
-            r2_all = r2_score(probe_values_flat[probe_name], pred)
-
-            # Probe on last states only
-            probe_last = LinearRegression()
-            probe_last.fit(act_last, probe_values_last[probe_name])
-            pred_last = probe_last.predict(act_last)
-            r2_last = r2_score(probe_values_last[probe_name], pred_last)
-
-            probes[probe_name] = {'r2': r2_all, 'r2_last': r2_last}
-
-        probe_results[layer_name] = probes
-
-    # Print results
-    # Print results - DISABLED for cleaner training output
-    # All probe results are still computed and saved for later analysis
-    # print("\nGeometry Probe Results (R² scores):")
-    # print("=" * 80)
-    # for layer_name, probes in probe_results.items():
-    #     print(f"\n{layer_name}:")
-    #     for probe_name, result in probes.items():
-    #         print(f"  {probe_name:20s}: R² (all) = {result['r2']:.4f}, R² (last) = {result['r2_last']:.4f}")
-
-    return probe_results
+    return _probe_layers(activation_dict, make_targets)
 
 
 def make_probe_windows(trajectories, orbital_params, block_size, n_probe, seed=0):
-    """Chop trajectories into windows and map each to its source-trajectory index.
+    """`n_probe` windows in float64, with each window's source-trajectory index.
 
-    Caps the effective block size to num_points-1 so block_size >= num_points still
-    yields windows. Returns (windows, traj_idx) with `n_probe` randomly selected windows.
+    Thin wrapper over `data.sample_windows`: the probes need float64 activations
+    and a trajectory index clipped to the orbital-parameter table, which may be
+    shorter than the trajectory array.
     """
-    npnts  = trajectories.shape[1]
-    eff_bs = min(block_size, npnts - 1)
-    inputs, _ = chop_trajectories_into_sequences(trajectories, eff_bs, seed=seed)
-    seqs_per_traj = max(1, npnts // eff_bs)
-    traj_idx = np.arange(len(inputs)) // seqs_per_traj
-    rng = np.random.default_rng(seed)
-    sel = rng.choice(len(inputs), size=min(n_probe, len(inputs)), replace=False)
-    return inputs[sel].astype(np.float64), np.clip(traj_idx[sel], 0, len(orbital_params) - 1)
+    windows, traj_idx = sample_windows(trajectories, block_size, n_probe, seed=seed)
+    return windows.astype(np.float64), np.clip(traj_idx, 0, len(orbital_params) - 1)
 
 
 def probe_model(model, trajectories, orbital_params, block_size, n_probe=1000, seed=0):

@@ -46,12 +46,13 @@ window. For `block_size = 2` there are two content blocks:
 - `D = 2`, `dt = 0.2`, $GM = 1$, `torch.set_default_dtype(torch.float64)`.
 
 **Code entry points.**
-- `analysis.elm.collect` — samples $n$ real-orbit windows, returns
-  `all_blocks (n, T, 2, 2)` and `coeffs (n, T)` where `coeffs = trace(J)/D`.
-- `analysis.elm.rotation_decompose` / `block_rotation_decomp` — the §A coefficients.
-- Notebook `index.ipynb` cells `fig-residual-coefficients` and
-  `fig-antisym-direction` — the §B (common/difference) analysis. Their inline
-  `coeffs()` helper is the reference implementation for the residual coefficients.
+- `analysis.elm.collect_terms` — samples $n$ real-orbit windows, returns
+  `all_blocks (n, T, 2, 2)` and `coeffs (n, T)` where `coeffs = trace(J)/D`,
+  alongside the content, positional and radius terms of the ELM sum.
+- `analysis.elm.rotation_decompose` — the §A coefficients. Accepts a single
+  `(2, 2)` block or a stack, so it covers both the averaged and per-window cases.
+- `analysis.elm.residual_structure` / `plot_residual_structure` — the §B
+  (common/difference) analysis behind `index.ipynb`'s `fig-residual-structure`.
 
 ---
 
@@ -129,9 +130,9 @@ $$
 (sI + aR)\,\mathbf r \;\leftrightarrow\; s\,z + a\,(i\,z),
 $$
 
-since $i\,z$ is the $90^\circ$ CCW rotation of $z$. This is why, in
-`rotation_channel_decomposition`, the two tokens' isotropic and generator parts
-add as plain complex numbers — no special handling of $s$ vs $a$:
+since $i\,z$ is the $90^\circ$ CCW rotation of $z$. This is why the two tokens'
+isotropic and generator parts add as plain complex numbers — no special handling
+of $s$ vs $a$:
 
 ```
 z_iso   = s_r * z_t + s_p * z_{t-1}
@@ -144,15 +145,16 @@ z_shear = (full content) - z_iso - z_gen        # the remainder
 | quantity | code |
 |---|---|
 | $s, a$, angle, rot-score of a full block | `elm.rotation_decompose` (`ds`, `anti`, `angle_deg`, `rot_score`) |
-| per-window $s, a$, angle | `elm.block_rotation_decomp` |
-| iso/gen/shear complex split | `elm.rotation_channel_decomposition` |
+| per-window $s, a$, angle | `elm.rotation_decompose` on a stacked `(n, 2, 2)` array |
+| iso/gen/shear complex split | derivation only; no longer implemented in the package |
 
 `rotation_decompose` defines `rot_score = anti**2 / (anti**2 + sym_od**2 + diag_d**2 + 1e-12)`,
 which is exactly the boxed formula with `sym_od =` $\gamma_{\rm o}$, `diag_d =` $\gamma_{\rm d}$.
 
 **Numbers to expect (noiseless bs=2).** The averaged blocks are near-pure scaled
 rotations: $J_{\rm recent}\approx 1.85\,R(\sim5^\circ)$, $J_{\rm prev}\approx
--0.9\,R(\cdots)$, both with rot-score $\approx 1$ (fig `fig-jacobian-rotation-noiseless`).
+-0.9\,R(\cdots)$, both with rot-score $\approx 1$ (measured with `rotation_decompose`; only the
+noisy counterpart is plotted, as `fig-jacobian-rotation`).
 
 ---
 
@@ -191,9 +193,10 @@ $$
 \;}
 $$
 
-(Code: `dJr = all_blocks[:, T-1] - 2*I2`, `dJp = all_blocks[:, T-2] + I2` in the
-`fig-residual-coefficients` cell; same subtraction in
-`elm.gravity_kick_frames` via `channels(Jrec - 2*I2)` / `channels(Jprv + I2)`.)
+(Code: `dJr = all_blocks[:, T-1] - 2*I2`, `dJp = all_blocks[:, T-2] + I2`, as
+`elm.residual_structure` computes them for `fig-residual-structure`. The same
+subtraction, taken on the *products* rather than the operators, is what
+`elm.kick_terms` reports for `fig-kick-terms`.)
 
 Acting on the two input positions, the residual is the model's **non-inertial
 correction**:
@@ -267,14 +270,13 @@ $\bar c$ multiplies the *position* sum and $\Delta c$ multiplies the *velocity* 
 so measuring which mode dominates tells us, model-agnostically, whether the
 residual operator reads positions or velocity.
 
-> **Notation note.** The notebook figures and the inline `coeffs(dJ)` helper
-> label the residual's isotropic coefficient `d` (for *deviation*); here we call
-> it $s$ throughout, matching §A. So the figure's $\bar d, \Delta d$ are this
-> doc's $\bar s, \Delta s$.
+> **Notation note.** The code labels the residual's isotropic coefficient `d`
+> (for *deviation*); here we call it $s$ throughout, matching §A. So the code's
+> $\bar d, \Delta d$ are this doc's $\bar s, \Delta s$.
 
-(Code, `fig-residual-coefficients`: `abar, adiff = median((a_r+a_p)/2), median((a_r-a_p)/2)`
+(Code, `elm.residual_structure`: `abar, adiff = median((a_r+a_p)/2), median((a_r-a_p)/2)`
 and likewise `dbar, ddiff` for the isotropic mode. The residual coefficients come
-from the inline `coeffs(dJ)` helper: `d = (dJ00+dJ11)/2` $= s$,
+from its `parts(M)` helper: `d = (dJ00+dJ11)/2` $= s$,
 `a = (dJ10-dJ01)/2`, `od = (dJ01+dJ10)/2` $= \gamma_{\rm o}$,
 `dd = (dJ00-dJ11)/2` $= \gamma_{\rm d}$, `score = a**2/(a**2+od**2+dd**2)`.)
 
@@ -307,7 +309,7 @@ alone. That is the structural claim of this section.
 ### Measured (noiseless bs=2)
 
 Both residual blocks are near-pure scaled rotations (rot-score $\approx 1$,
-shear negligible — fig `fig-residual-coefficients`a), and the coefficients are
+shear negligible — `fig-residual-structure`b), and the coefficients are
 **equal-and-opposite** across the token pair:
 
 - rotation generator: $\bar a \approx 0$, with $|\bar a|/(|\bar a|+|\Delta a|)\approx 0.02$;
@@ -326,8 +328,8 @@ $$
 ### Direction test — which antisymmetry is the gravitational pull?
 
 Each mode is now a single vector; resolve it onto the radial (inward-gravity)
-axis $-\hat{\mathbf r}_t$ and the tangential axis (code: `fig-antisym-direction`,
-`rot_vec = Δa · (v @ Rᵀ)`, `iso_vec = Δs · v`):
+axis $-\hat{\mathbf r}_t$ and the tangential axis (`rot_vec = Δa · (v @ Rᵀ)`,
+`iso_vec = Δs · v`; derivation only — this test is not plotted in the pub):
 
 - **Rotation antisymmetry** $\Delta a\,R\,\mathbf v$ — velocity turned $90^\circ$.
   $\cos(R\mathbf v, -\hat{\mathbf r}_t)\approx 0.98$: turning a (near-)tangential
@@ -338,7 +340,7 @@ axis $-\hat{\mathbf r}_t$ and the tangential axis (code: `fig-antisym-direction`
   tangential term, **not** the gravitational pull.
 
 Resolved on the radial/tangential plane the two clusters are near-orthogonal
-(fig `fig-antisym-direction`b): the rotation antisymmetry is specifically the
+the rotation antisymmetry is specifically the
 one supplying gravity. The single-mode alignment ($\cos\approx0.98$, i.e.
 $\sim13^\circ$) is short of the full correction's $\cos\approx0.999$; the gap is
 closed by the remaining terms, whose full channel-level accounting is left to
@@ -349,13 +351,13 @@ future work.
 ## D. End-to-end workflow (noiseless model), in order
 
 1. Load the noiseless checkpoint (`noise_scale = 0.0`), `float64`, eval mode.
-2. `NT.collect(model, block_size=2, n_windows=200, seed, offset)` → `all_blocks (n,2,2,2)`, `coeffs = tr/D`.
+2. `NT.collect_terms(model, block_size=2, n_windows=N, seed, offset)` → `all_blocks (n,2,2,2)`, `coeffs = tr/D`, plus the content/positional/radius terms.
 3. **Isotropic coefficients** (§A, $s$): scatter $(c_{\rm prev}, c_{\rm recent})$ → lands on Inertial point $(-1,2)$. (`fig-verlet-noiseless`)
-4. **§A on full blocks:** `rotation_decompose` → averaged blocks are scaled rotations, rot-score ≈ 1. (`fig-jacobian-rotation-noiseless`)
+4. **§A on full blocks:** `rotation_decompose` → averaged blocks are scaled rotations, rot-score ≈ 1. (not plotted for the noiseless model; cf. `fig-jacobian-rotation`)
 5. **Behavioural gravity test** (§B, attribution-free): $\mathbf a_{\rm eff}$ points sunward, $\propto 1/r^2$, matches $-\mathbf r/|\mathbf r|^3$. (`fig-newton-behavioral`)
 6. **Residual blocks** (§B): $\mathrm dJ_{\rm recent}=J_{\rm recent}-2I$, $\mathrm dJ_{\rm prev}=J_{\rm prev}+I$.
-7. **§A on residual + §C:** per-block rot-score ≈ 1; common/difference split gives $\bar a\approx\bar s\approx0$ (equal-and-opposite). (`fig-residual-coefficients`)
-8. **Direction of the two antisymmetric velocity operators** (§C): rotation → radial/sunward ($\cos\approx0.98$); isotropic → tangential ($\cos\approx0.09$). (`fig-antisym-direction`)
+7. **§A on residual + §C:** per-block rot-score ≈ 1; common/difference split gives $\bar a\approx\bar s\approx0$ (equal-and-opposite). (`fig-residual-structure`)
+8. **Direction of the two antisymmetric velocity operators** (§C): rotation → radial/sunward ($\cos\approx0.98$); isotropic → tangential ($\cos\approx0.09$). (derivation only, not plotted)
 
 ---
 

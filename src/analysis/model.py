@@ -425,137 +425,11 @@ class GPTCV(nn.Module):
     # ELM utilities
     # ------------------------------------------------------------------
 
-    def compute_positional_contribution(self, x_star):
-        """
-        Compute the output contribution from positional embeddings alone.
-
-        This runs a forward pass with the same sequence length as x_star,
-        but with zero content (x=0), isolating the positional embedding effect.
-
-        Args:
-            x_star: input tensor of shape (1, T, input_dim) or (1, T)
-                    (only used to determine sequence length T)
-
-        Returns:
-            pos_contribution: flattened output from positional embeddings only,
-                             shape (T * input_dim,)
-        """
-        if x_star.dim() == 2:
-            x_star = x_star.unsqueeze(-1)
-
-        T = x_star.shape[1]
-        input_dim = x_star.shape[2]
-        device = x_star.device
-
-        # Create zero content input (same shape as x_star)
-        x_zero = torch.zeros(1, T, input_dim, dtype=x_star.dtype, device=device)
-
-        # Forward pass with zero content (only positional embeddings contribute)
-        with torch.no_grad():
-            y_pos_only, _ = self.forward(x_zero)
-
-        return y_pos_only.reshape(-1)
-
-    def compute_detached_jacobians(self, x_star):
-        """
-        Compute the detached Jacobian matrices J+_i for each input token position.
-
-        For a sequence x* of shape (1, T, input_dim), returns a list of T matrices
-        each of shape (output_dim_flat, input_dim), where output_dim_flat is the
-        total number of output scalars (1 * T * input_dim for full-sequence output).
-
-        Args:
-            x_star: input tensor of shape (1, T, input_dim) or (1, T), dtype float64
-                    recommended for numerical precision.
-
-        Returns:
-            jacobians:         list of T tensors, each of shape (T * input_dim, input_dim)
-                              J+_i such that sum_i J+_i @ x*_i + pos + residual == y*
-            y_star:           model output tensor, shape (1, T, input_dim)
-            recon_err:        relative reconstruction error (scalar) for verification
-            pos_contribution: flattened output from positional embeddings only
-            b_residual:       residual affine offset (should be ~0 if Jacobian is correct)
-        """
-        assert x_star.shape[0] == 1, "Batch size must be 1 for Jacobian computation"
-
-        if x_star.dim() == 2:
-            x_star = x_star.unsqueeze(-1)   # (1, T, 1)
-
-        T         = x_star.shape[1]
-        input_dim = x_star.shape[2]
-
-
-        self.eval()
-        pos_contribution = self.compute_positional_contribution(x_star)
-
-        # Enable ELM mode
-        self.detach_for_elm = True
-        self.eval()
-
-        # Forward pass to get y* (numerical output is identical to standard forward)
-        with torch.no_grad():
-            y_star, _ = self.forward(x_star)
-        y_star_flat = y_star.reshape(-1)   # (T * input_dim,)
-
-        # Compute Jacobian w.r.t. each token position separately
-        # x_star shape (1, T, input_dim) – we differentiate w.r.t. each (1, 1, input_dim) slice
-        jacobians = []
-
-        # Build each per-token Jacobian by constructing a fresh closure that
-        # captures `idx` by value (default-argument trick), not by reference.
-        # The closure also builds the full input tensor from scratch rather than
-        # cloning-then-assigning, so the autograd graph is clean.
-        def make_forward_flat(idx, x_star_fixed):
-            """Return a function that replaces position idx and runs forward."""
-            # rows that are NOT idx are constants; only position idx is a variable
-            before = x_star_fixed[0, :idx, :].detach()          # (idx, input_dim)
-            after  = x_star_fixed[0, idx+1:, :].detach()        # (T-idx-1, input_dim)
-            def forward_flat(x_i):
-                # x_i: (input_dim,)  -- the live variable for autograd
-                x_in = torch.cat([
-                    before,
-                    x_i.unsqueeze(0),
-                    after,
-                ], dim=0).unsqueeze(0)   # (1, T, input_dim)
-                with torch.enable_grad():
-                    out, _ = self.forward(x_in)
-                return out.reshape(-1)   # (T * input_dim,)
-            return forward_flat
-
-        for i in range(T):
-            x_i = x_star[0, i, :].detach().requires_grad_(True)   # (input_dim,)
-            J_i = torch.autograd.functional.jacobian(
-                make_forward_flat(i, x_star), x_i,
-                create_graph=False, strict=False
-            )
-            jacobians.append(J_i)   # (T * input_dim, input_dim)
-
-        # Affine offset correction - separate positional from residual
-        # Total affine offset: b(x*) = y* - J+(x*) @ x*
-        J_x_star = sum(
-            jacobians[i] @ x_star[0, i, :]
-            for i in range(T)
-        )
-
-        # Test reconstruction with Jacobian + positional (without residual)
-        recon = J_x_star + pos_contribution
-        recon_err = (recon - y_star_flat).norm() / (y_star_flat.norm() + 1e-30)
-
-        # Compute residual - if small, Jacobian is working correctly
-        b_residual = y_star_flat - (J_x_star + pos_contribution)
-
-        recon_err = recon_err.item()
-
-        # Restore standard mode
-        self.detach_for_elm = False
-
-        return jacobians, y_star, recon_err, pos_contribution, b_residual
-
     def compute_detached_jacobians_embedding(self, x_star):
         """
-        Embedding-level ELM decomposition (differentiates downstream of the
-        positional-embedding sum, unlike compute_detached_jacobians which
-        differentiates w.r.t. the raw input x).
+        Embedding-level ELM decomposition: differentiates downstream of the
+        positional-embedding sum rather than w.r.t. the raw input x, which is
+        what makes the resulting identity exact rather than merely linear.
 
         With h_t = W_in @ x_t + wpe[t], the map h -> output is degree-1
         homogeneous after ELM detachment, so reconstruction is EXACT:
@@ -801,8 +675,8 @@ def load_from_checkpoint(path, device=None, strict=True):
 
     Example
     -------
-        from model_cv_elm import load_from_checkpoint
-        model, ckpt = load_from_checkpoint('run_block2/best_model.pt', device='cuda')
-        model.verify_elm_reconstruction(x_star.double())
+        from analysis.model import load_from_checkpoint
+        model, ckpt = load_from_checkpoint('checkpoints/.../model_block_size_2....pt')
+        blocks, *_ = model.compute_detached_jacobians_embedding(x_star.double())
     """
     return GPTCV.load_checkpoint(path, device=device, strict=strict)

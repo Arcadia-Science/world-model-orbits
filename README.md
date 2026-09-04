@@ -28,9 +28,9 @@ The publication is hosted at [this URL](https://arcadia-science.github.io/[REPO-
 ## Reproduce
 
 All analysis code lives in the `analysis` package (`src/analysis/`). The
-notebooks (`verify_elm.ipynb`, `mechanistic_analysis.ipynb`) load a generated
-dataset and pre-trained checkpoints; the steps below regenerate those inputs
-from scratch. See also [SETUP.qmd](pages/SETUP.qmd).
+publication notebook (`index.ipynb`) loads a generated dataset and pre-trained
+checkpoints; the steps below regenerate those inputs from scratch. See also
+[SETUP.qmd](pages/SETUP.qmd).
 
 ### 1. Set up the environment
 
@@ -66,7 +66,7 @@ python -m analysis.training --smoke   # fast sanity check (200 steps, not for pu
 
 ### 4. Run the analyses
 
-With `data_cv/` and `checkpoints/` in place, execute the notebooks (e.g. in
+With `data_cv/` and `checkpoints/` in place, execute `index.ipynb` (e.g. in
 Jupyter, or `quarto preview` for a live render of the publication).
 
 > **Notes.** Run steps 2–3 from the repository root so `data_cv/` and
