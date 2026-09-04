@@ -100,6 +100,84 @@ def collect_terms(model, block_size, n_windows, seed=0, offset=0):
 # Checked for colourblind separation (worst adjacent pair dE 24.6 protan).
 _TERM_COLOURS = ('#ff7f0e', '#1f77b4', '#9467bd')     # prev, recent, positional
 
+# Arcadia palette. Kept here rather than taken from `arcadia_pycolor` because the
+# analysis environment does not install it -- see env-minimal.yml.
+ARC_SLATE = '#403F4C'   # axes, text
+ARC_VIBE  = '#5088C5'   # primary scatter
+ARC_CORAL = '#F28360'   # fit line
+ARC_GRID  = '#E8E8ED'   # light gridlines
+ARC_DIAG  = '#8A8A99'   # y = x reference
+
+
+def apply_figure_style():
+    """Set the publication's matplotlib defaults, once, for every figure.
+
+    rcParams is global and permanent, so this has to run before the first figure
+    is drawn -- applying it partway through a notebook silently gives the figures
+    above it one style and those below it another.
+    """
+    import matplotlib as mpl
+    mpl.rcParams.update({
+        'font.family':        'sans-serif',
+        'font.sans-serif':    ['Helvetica Neue', 'Arial', 'DejaVu Sans'],
+        'font.size':          11,
+        'axes.spines.top':    False,
+        'axes.spines.right':  False,
+        'axes.spines.left':   True,
+        'axes.spines.bottom': True,
+        'axes.edgecolor':     ARC_SLATE,
+        'axes.linewidth':     0.8,
+        'axes.labelcolor':    ARC_SLATE,
+        'xtick.color':        ARC_SLATE,
+        'ytick.color':        ARC_SLATE,
+        'xtick.major.width':  0.8,
+        'ytick.major.width':  0.8,
+        'text.color':         ARC_SLATE,
+        'figure.facecolor':   'white',
+        'axes.facecolor':     'white',
+    })
+
+
+def plot_coefficient_plane(ax, coeffs):
+    """The model's position in (c_{t-1}, c_t) space, one point per window.
+
+    c = tr(J)/D is the isotropic part of a content Jacobian: the scalar weight the
+    model places on that input position. Three reference points make the plot
+    readable, and each says something different:
+
+        (-1, 2)  inertial      constant-velocity extrapolation, 2 r_t - r_(t-1),
+                               which is the linear part of a Verlet step
+        (0, 1)   persistence   copy the last position and ignore the previous one
+        the line c_(t-1) + c_t = 1   any weighted average of the two inputs
+
+    A model doing forward extrapolation sits near (-1, 2); one doing interpolation
+    sits on the dashed line. Drawn by both the noisy and noiseless figures, so the
+    reference markers carry the same names in each.
+    """
+    T = coeffs.shape[1]
+    c_prev, c_recent = coeffs[:, T - 2], coeffs[:, T - 1]
+
+    ax.scatter(c_prev, c_recent, s=14, alpha=0.5, color='tab:blue',
+               label='per-window', zorder=2)
+    ax.scatter([c_prev.mean()], [c_recent.mean()], s=120, marker='D',
+               color='tab:blue', edgecolor='k', zorder=4,
+               label=f'measured mean ({c_prev.mean():.2f}, {c_recent.mean():.2f})')
+    ax.scatter([-1], [2], s=200, marker='*', color='tab:red', edgecolor='k',
+               label='inertial (-1, 2)', zorder=5)
+    ax.scatter([0], [1], s=120, marker='P', color='tab:green', edgecolor='k',
+               label='persistence (0, 1)', zorder=4)
+
+    lo = min(-1.5, float(c_prev.min()))
+    hi = max(2.5, float(c_recent.max()))
+    xs = np.linspace(lo, hi, 50)
+    ax.plot(xs, 1 - xs, ls='--', color='gray', lw=1, zorder=1,
+            label=r'$c_{t-1}+c_t=1$')
+
+    ax.set_xlabel(r'$c_{t-1}$  (previous position)')
+    ax.set_ylabel(r'$c_t$  (most recent position)')
+    ax.set_title('Where does the model sit?')
+    ax.legend(fontsize=8, loc='best')
+
 
 def plot_term_magnitudes(ax, content, positional, radius):
     """Size of every term in the ELM sum, per window, against |r_t|.
@@ -203,7 +281,9 @@ def plot_kick_terms(axes, content, positional, windows, dt):
 
     Panel (c) puts the radial division against radius directly, with medians over
     quantile bins and a bootstrap CI, since the trend is otherwise only implied by
-    the colour scale in (a).
+    the colour scale in (a).  The bootstrap is paired across the two terms -- both
+    are resampled on the same windows within a bin -- so the gap between the bands
+    reflects the terms differing, not two independent resamplings differing.
 
     The deviation annotated in (a) and (b) is identically |sum - target|: it
     measures how well the attributed TOTAL matches gravity, the same quantity
@@ -267,19 +347,31 @@ def plot_kick_terms(axes, content, positional, windows, dt):
 
     # --- (c): the radial division against radius ---------------------------------
     ax = axes[2]
-    n_bins = 5
+    n_bins, n_boot = 5, 4000
     edges = np.percentile(radius, np.linspace(0, 100, n_bins + 1))
+
+    # Bin once, and draw one bootstrap resampling per bin up front, from a single
+    # stream so the bins are independent draws.  Every series is then resampled on
+    # the SAME windows: the terms are measured per window, so pairing them removes
+    # resampling noise from the comparison *between* series, which is what this panel
+    # is for.  (Constructing the generator inside the loops instead would hand the
+    # equal-sized quantile bins identical index matrices.)
+    rg = np.random.default_rng(0)
+    bins = []
+    for a, b in zip(edges[:-1], edges[1:]):
+        k = (radius >= a) & (radius < b)
+        if k.sum() < 8:
+            continue
+        n_k = int(k.sum())
+        bins.append((k, rg.integers(0, n_k, size=(n_boot, n_k))))
+
     for label, v, colour, marker in series:
         y = (v * ghat).sum(1) / g
         ax.scatter(radius, y, s=8, alpha=0.18, color=colour, linewidths=0)
         cen, med, blo, bhi = [], [], [], []
-        for a, b in zip(edges[:-1], edges[1:]):
-            k = (radius >= a) & (radius < b)
-            if k.sum() < 8:
-                continue
+        for k, boot_idx in bins:
             yy = y[k]
-            rg = np.random.default_rng(0)
-            boot = np.median(yy[rg.integers(0, len(yy), size=(4000, len(yy)))], axis=1)
+            boot = np.median(yy[boot_idx], axis=1)
             cen.append(float(np.median(radius[k]))); med.append(float(np.median(yy)))
             q = np.percentile(boot, [2.5, 97.5]); blo.append(q[0]); bhi.append(q[1])
         ax.plot(cen, med, '-', color=colour, lw=2, marker=marker, ms=6, label=label)
