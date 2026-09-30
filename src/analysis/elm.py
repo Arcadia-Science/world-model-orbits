@@ -142,12 +142,11 @@ def plot_coefficient_plane(ax, coeffs):
     """The model's position in (c_{t-1}, c_t) space, one point per window.
 
     c = tr(J)/D is the isotropic part of a content Jacobian: the scalar weight the
-    model places on that input position. Three reference points make the plot
-    readable, and each says something different:
+    model places on that input position. Two references make the plot
+    readable, and they say different things:
 
         (-1, 2)  inertial      constant-velocity extrapolation, 2 r_t - r_(t-1),
                                which is the linear part of a Verlet step
-        (0, 1)   persistence   copy the last position and ignore the previous one
         the line c_(t-1) + c_t = 1   any weighted average of the two inputs
 
     A model doing forward extrapolation sits near (-1, 2); one doing interpolation
@@ -159,13 +158,11 @@ def plot_coefficient_plane(ax, coeffs):
 
     ax.scatter(c_prev, c_recent, s=14, alpha=0.5, color='tab:blue',
                label='per-window', zorder=2)
-    ax.scatter([c_prev.mean()], [c_recent.mean()], s=120, marker='D',
+    ax.scatter([c_prev.mean()], [c_recent.mean()], s=130, marker='o',
                color='tab:blue', edgecolor='k', zorder=4,
                label=f'measured mean ({c_prev.mean():.2f}, {c_recent.mean():.2f})')
-    ax.scatter([-1], [2], s=200, marker='*', color='tab:red', edgecolor='k',
+    ax.scatter([-1], [2], s=130, marker='o', color='tab:red', edgecolor='k',
                label='inertial (-1, 2)', zorder=5)
-    ax.scatter([0], [1], s=120, marker='P', color='tab:green', edgecolor='k',
-               label='persistence (0, 1)', zorder=4)
 
     lo = min(-1.5, float(c_prev.min()))
     hi = max(2.5, float(c_recent.max()))
@@ -175,7 +172,6 @@ def plot_coefficient_plane(ax, coeffs):
 
     ax.set_xlabel(r'$c_{t-1}$  (previous position)')
     ax.set_ylabel(r'$c_t$  (most recent position)')
-    ax.set_title('Where does the model sit?')
     ax.legend(fontsize=8, loc='best')
 
 
@@ -194,14 +190,10 @@ def plot_term_magnitudes(ax, content, positional, radius):
     prediction and is invisible on a linear axis beside the content terms.
 
     The terms are vectors summing to the prediction, so their magnitudes do NOT
-    add to |y| and must not be stacked.  The annotation reports
-    Sum_terms |term| / |y|, which is 1 when the terms simply add and grows as
-    they cancel -- a forward extrapolator builds a small prediction out of
-    large opposing terms, a weighted average does not.
+    add to |y| and must not be stacked.
     """
     T = content.shape[1]
     nrm = lambda a: np.linalg.norm(a, axis=-1)
-    y_mag = nrm(content.sum(1) + positional)
 
     series = [
         (r'$J_{t-1}\,\mathbf{r}_{t-1}$',        nrm(content[:, T - 2])),
@@ -212,19 +204,12 @@ def plot_term_magnitudes(ax, content, positional, radius):
         ax.scatter(radius, mag, s=12, alpha=0.55, color=colour, linewidths=0,
                    label=f'{label}   median {np.median(mag):.3f}')
 
-    cancellation = np.median(sum(mag for _, mag in series) / y_mag)
-    ax.text(0.03, 0.03,
-            r'$\sum|\text{term}|\,/\,|\hat{\mathbf{r}}_{t+1}|$ = ' + f'{cancellation:.2f}'
-            + '\n(1.0 = terms add, >1 = they cancel)',
-            transform=ax.transAxes, fontsize=8, va='bottom',
-            bbox=dict(boxstyle='round', fc='white', ec='0.7', alpha=0.85))
-
     ax.set_yscale('log')
     ax.set_xlabel(r'$|\mathbf{r}_t|$')
     ax.set_ylabel('magnitude of ELM term')
     ax.grid(True, which='both', alpha=0.2, lw=0.5)
     ax.set_axisbelow(True)
-    ax.legend(fontsize=8, loc='center right')
+    ax.legend(fontsize=8, loc='lower right')
 
 
 def kick_terms(content, positional, windows, dt):
@@ -285,9 +270,11 @@ def plot_kick_terms(axes, content, positional, windows, dt):
     are resampled on the same windows within a bin -- so the gap between the bands
     reflects the terms differing, not two independent resamplings differing.
 
-    The deviation annotated in (a) and (b) is identically |sum - target|: it
+    The line_deviation returned for (a) and (b) is identically |sum - target|: it
     measures how well the attributed TOTAL matches gravity, the same quantity
     @fig-newton-behavioral measures behaviourally, and says nothing about the split.
+    It is returned rather than drawn, so the prose can quote it without the panel
+    carrying a number the reader has to parse.
 
     Keeping the individual windows matters: a summary over windows cannot show that
     the cancellation holds window by window, and the tangential component in
@@ -316,9 +303,9 @@ def plot_kick_terms(axes, content, positional, windows, dt):
               ('their sum', t['total'], 'tab:green', 's')]
 
     # --- (a), (b): the two components against their constraint lines --------------
-    panels = [('radial', ghat, 1.0, '(a) Radial: the pair must sum to 1'),
-              ('tangential', that, 0.0, '(b) Tangential: the pair must sum to 0')]
-    for ax, (name, proj, target, title) in zip(axes[:2], panels):
+    panels = [('radial', ghat, 1.0, '(a)'),
+              ('tangential', that, 0.0, '(b)')]
+    for ax, (name, proj, target, letter) in zip(axes[:2], panels):
         c = (t['content'] * proj).sum(1) / g
         p = (t['positional'] * proj).sum(1) / g
         out['line_deviation'][name] = float(np.median(np.abs(c + p - target)))
@@ -329,18 +316,15 @@ def plot_kick_terms(axes, content, positional, windows, dt):
         span = np.linspace(lo, hi, 10)
 
         ax.plot(span, target - span, '--', color='0.25', lw=1.5,
-                label=fr'sum $= {target:.0f}$  (Newtonian gravity)')
+                label=fr'{name}: sum $= {target:.0f}$  (Newtonian gravity)')
         sc = ax.scatter(c, p, s=20, alpha=0.8, c=radius, cmap='viridis',
                         vmin=vlo, vmax=vhi, linewidths=0)
         ax.axhline(0, color='0.88', lw=0.6); ax.axvline(0, color='0.88', lw=0.6)
         ax.set_xlim(lo, hi); ax.set_ylim(lo, hi); ax.set_aspect('equal')
         ax.set_xlabel(r'content residual / $|\mathbf{g}|$')
         ax.set_ylabel(r'positional (wpe) / $|\mathbf{g}|$')
-        ax.set_title(title, fontsize=11)
-        ax.text(0.03, 0.03,
-                f"median |ELM total $-$ ideal| = {out['line_deviation'][name]:.3f}",
-                transform=ax.transAxes, fontsize=8, va='bottom',
-                bbox=dict(boxstyle='round', fc='white', ec='0.7', alpha=0.85))
+        ax.text(0.03, 0.97, letter, transform=ax.transAxes, va='top', ha='left',
+                fontsize=11)
         ax.legend(fontsize=8, loc='upper right')
     cb = axes[0].figure.colorbar(sc, ax=list(axes[:2]), fraction=0.046, pad=0.03)
     cb.set_label(r'$|\mathbf{r}_t|$')
@@ -384,7 +368,8 @@ def plot_kick_terms(axes, content, positional, windows, dt):
     ax.set_ylim(-1.6, 3.0)
     ax.set_xlabel(r'$|\mathbf{r}_t|$')
     ax.set_ylabel(r'radial component / $|\mathbf{g}|$')
-    ax.set_title('(c) Who supplies it, against radius', fontsize=11)
+    ax.text(0.97, 0.97, '(c)', transform=ax.transAxes, va='top', ha='right',
+            fontsize=11)
     ax.legend(fontsize=8, loc='upper left')
     return out
 
