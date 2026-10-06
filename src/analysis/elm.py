@@ -156,13 +156,13 @@ def plot_coefficient_plane(ax, coeffs):
     T = coeffs.shape[1]
     c_prev, c_recent = coeffs[:, T - 2], coeffs[:, T - 1]
 
-    ax.scatter(c_prev, c_recent, s=14, alpha=0.5, color='tab:blue',
-               label='per-window', zorder=2)
+    ax.scatter(c_prev, c_recent, s=14, alpha=0.25, color='tab:blue',
+               label='Per-window', zorder=2)
     ax.scatter([c_prev.mean()], [c_recent.mean()], s=130, marker='o',
                color='tab:blue', edgecolor='k', zorder=4,
-               label=f'measured mean ({c_prev.mean():.2f}, {c_recent.mean():.2f})')
+               label=f'Measured mean')
     ax.scatter([-1], [2], s=130, marker='o', color='tab:red', edgecolor='k',
-               label='inertial (-1, 2)', zorder=5)
+               label='Inertial point (-1, 2)', zorder=5)
 
     lo = min(-1.5, float(c_prev.min()))
     hi = max(2.5, float(c_recent.max()))
@@ -172,7 +172,7 @@ def plot_coefficient_plane(ax, coeffs):
 
     ax.set_xlabel(r'$c_{t-1}$  (previous position)')
     ax.set_ylabel(r'$c_t$  (most recent position)')
-    ax.legend(fontsize=8, loc='best')
+    ax.legend(loc='best')
 
 
 def plot_term_magnitudes(ax, content, positional, radius):
@@ -196,20 +196,19 @@ def plot_term_magnitudes(ax, content, positional, radius):
     nrm = lambda a: np.linalg.norm(a, axis=-1)
 
     series = [
-        (r'$J_{t-1}\,\mathbf{r}_{t-1}$',        nrm(content[:, T - 2])),
-        (r'$J_t\,\mathbf{r}_t$',                nrm(content[:, T - 1])),
-        (r'positional (wpe)',                   nrm(positional)),
+        (r'$J_{t-1}\,r_{t-1}$',        nrm(content[:, T - 2])),
+        (r'$J_t\,r_t$',                nrm(content[:, T - 1])),
+        (r'$P$ (wpe)',                   nrm(positional)),
     ]
     for (label, mag), colour in zip(series, _TERM_COLOURS):
-        ax.scatter(radius, mag, s=12, alpha=0.55, color=colour, linewidths=0,
-                   label=f'{label}   median {np.median(mag):.3f}')
+        ax.scatter(radius, mag, s=12, alpha=0.5, color=colour, linewidths=0,
+                   label=f'{label}')
 
     ax.set_yscale('log')
-    ax.set_xlabel(r'$|\mathbf{r}_t|$')
-    ax.set_ylabel('magnitude of ELM term')
-    ax.grid(True, which='both', alpha=0.2, lw=0.5)
+    ax.set_xlabel(r'$|r_t|$')
+    ax.set_ylabel('Magnitude of ELM term')
     ax.set_axisbelow(True)
-    ax.legend(fontsize=8, loc='lower right')
+    ax.legend(loc='lower right')
 
 
 def kick_terms(content, positional, windows, dt):
@@ -298,9 +297,9 @@ def plot_kick_terms(axes, content, positional, windows, dt):
         out['exponent'][label] = float(
             np.polyfit(np.log(radius), np.log(np.linalg.norm(v, axis=1)), 1)[0])
 
-    series = [('content residual', t['content'], '#1f77b4', 'o'),
-              ('positional (wpe)', t['positional'], '#9467bd', '^'),
-              ('their sum', t['total'], 'tab:green', 's')]
+    series = [('content residual', t['content'], '#1f77b4'),
+              ('positional (wpe)', t['positional'], '#9467bd'),
+              ('their sum', t['total'], 'tab:green')]
 
     # --- (a), (b): the two components against their constraint lines --------------
     panels = [('radial', ghat, 1.0, '(a)'),
@@ -349,7 +348,7 @@ def plot_kick_terms(axes, content, positional, windows, dt):
         n_k = int(k.sum())
         bins.append((k, rg.integers(0, n_k, size=(n_boot, n_k))))
 
-    for label, v, colour, marker in series:
+    for label, v, colour in series:
         y = (v * ghat).sum(1) / g
         ax.scatter(radius, y, s=8, alpha=0.18, color=colour, linewidths=0)
         cen, med, blo, bhi = [], [], [], []
@@ -358,19 +357,16 @@ def plot_kick_terms(axes, content, positional, windows, dt):
             boot = np.median(yy[boot_idx], axis=1)
             cen.append(float(np.median(radius[k]))); med.append(float(np.median(yy)))
             q = np.percentile(boot, [2.5, 97.5]); blo.append(q[0]); bhi.append(q[1])
-        ax.plot(cen, med, '-', color=colour, lw=2, marker=marker, ms=6, label=label)
+        ax.plot(cen, med, '-', color=colour, lw=2, ms=6, label=label)
         ax.fill_between(cen, blo, bhi, color=colour, alpha=0.22)
         out['radial_profile'][label] = dict(r=cen, median=med, lo=blo, hi=bhi)
     ax.axhline(1, color='k', ls='--', lw=1.2)
     ax.axhline(0, color='0.6', lw=0.8)
-    ax.annotate('ideal kick', (0.02, 1.0), xycoords=('axes fraction', 'data'),
-                textcoords='offset points', xytext=(2, 4), fontsize=8)
     ax.set_ylim(-1.6, 3.0)
     ax.set_xlabel(r'$|\mathbf{r}_t|$')
-    ax.set_ylabel(r'radial component / $|\mathbf{g}|$')
-    ax.text(0.97, 0.97, '(c)', transform=ax.transAxes, va='top', ha='right',
-            fontsize=11)
-    ax.legend(fontsize=8, loc='upper left')
+    ax.set_ylabel(r'radial component / $|g|$')
+    ax.text(0.97, 0.97, '(c)', transform=ax.transAxes, va='top', ha='right')
+    ax.legend(loc='upper left')
     return out
 
 
