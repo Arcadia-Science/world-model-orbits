@@ -32,6 +32,7 @@ import io
 import contextlib
 
 import arcadia_pycolor as apc
+import matplotlib as mpl
 import numpy as np
 import torch
 
@@ -120,8 +121,13 @@ def apply_figure_style():
 
     Figure sizes are NOT set here; each figure picks one of Arcadia's canonical
     sizes from apc.mpl.FIGURE_SIZES_IN_INCHES.
+
+    One override on top of the package: apc sets legend.borderaxespad to 0, which
+    with frameon=False leaves the legend text flush against the spine. Restored to
+    matplotlib's 0.5 so legends clear the axes.
     """
     apc.mpl.setup()
+    mpl.rcParams['legend.borderaxespad'] = 0.5
 
 
 def plot_coefficient_plane(ax, coeffs):
@@ -142,12 +148,12 @@ def plot_coefficient_plane(ax, coeffs):
     T = coeffs.shape[1]
     c_prev, c_recent = coeffs[:, T - 2], coeffs[:, T - 1]
 
-    ax.scatter(c_prev, c_recent, s=14, alpha=0.25, color='tab:blue',
+    ax.scatter(c_prev, c_recent, alpha=0.25, color='tab:blue',
                label='Per-window', zorder=2)
-    ax.scatter([c_prev.mean()], [c_recent.mean()], s=130, marker='o',
+    ax.scatter([c_prev.mean()], [c_recent.mean()], marker='o',
                color='tab:blue', edgecolor='k', zorder=4,
                label=f'Measured mean')
-    ax.scatter([-1], [2], s=130, marker='o', color='tab:red', edgecolor='k',
+    ax.scatter([-1], [2], marker='o', color='tab:red', edgecolor='k',
                label='Inertial point (-1, 2)', zorder=5)
 
     lo = min(-1.5, float(c_prev.min()))
@@ -187,7 +193,7 @@ def plot_term_magnitudes(ax, content, positional, radius):
         (r'$P$ (wpe)',                   nrm(positional)),
     ]
     for (label, mag), colour in zip(series, _TERM_COLOURS):
-        ax.scatter(radius, mag, s=12, alpha=0.5, color=colour, linewidths=0,
+        ax.scatter(radius, mag, alpha=0.5, color=colour, linewidths=0,
                    label=f'{label}')
 
     ax.set_yscale('log')
@@ -288,9 +294,9 @@ def plot_kick_terms(axes, content, positional, windows, dt):
               ('their sum', t['total'], 'tab:green')]
 
     # --- (a), (b): the two components against their constraint lines --------------
-    panels = [('radial', ghat, 1.0, '(a)'),
-              ('tangential', that, 0.0, '(b)')]
-    for ax, (name, proj, target, letter) in zip(axes[:2], panels):
+    # Panel letters are supplied by Quarto's subfigure layout, not drawn here.
+    panels = [('radial', ghat, 1.0), ('tangential', that, 0.0)]
+    for ax, (name, proj, target) in zip(axes[:2], panels):
         c = (t['content'] * proj).sum(1) / g
         p = (t['positional'] * proj).sum(1) / g
         out['line_deviation'][name] = float(np.median(np.abs(c + p - target)))
@@ -301,14 +307,13 @@ def plot_kick_terms(axes, content, positional, windows, dt):
         span = np.linspace(lo, hi, 10)
 
         ax.plot(span, target - span, '--', color='0.25', lw=1.5,
-                label=fr'{name}: sum $= {target:.0f}$  (Newtonian gravity)')
-        sc = ax.scatter(c, p, s=20, alpha=0.8, c=radius, cmap='viridis',
+                label=fr'{name}: sum $= {target:.0f}$')
+        sc = ax.scatter(c, p, alpha=0.8, c=radius, cmap='viridis',
                         vmin=vlo, vmax=vhi, linewidths=0)
         ax.axhline(0, color='0.88', lw=0.6); ax.axvline(0, color='0.88', lw=0.6)
         ax.set_xlim(lo, hi); ax.set_ylim(lo, hi); ax.set_aspect('equal')
         ax.set_xlabel(r'content residual / $|\mathbf{g}|$')
         ax.set_ylabel(r'positional (wpe) / $|\mathbf{g}|$')
-        ax.text(0.03, 0.97, letter, transform=ax.transAxes, va='top', ha='left')
         ax.legend(loc='upper right')
         cb = ax.figure.colorbar(sc, ax=ax, fraction=0.046, pad=0.03)
         cb.set_label(r'$|\mathbf{r}_t|$')
@@ -335,7 +340,7 @@ def plot_kick_terms(axes, content, positional, windows, dt):
 
     for label, v, colour in series:
         y = (v * ghat).sum(1) / g
-        ax.scatter(radius, y, s=8, alpha=0.18, color=colour, linewidths=0)
+        ax.scatter(radius, y, alpha=0.18, color=colour, linewidths=0)
         cen, med, blo, bhi = [], [], [], []
         for k, boot_idx in bins:
             yy = y[k]
@@ -350,7 +355,6 @@ def plot_kick_terms(axes, content, positional, windows, dt):
     ax.set_ylim(-1.6, 3.0)
     ax.set_xlabel(r'$|\mathbf{r}_t|$')
     ax.set_ylabel(r'radial component / $|g|$')
-    ax.text(0.97, 0.97, '(c)', transform=ax.transAxes, va='top', ha='right')
     ax.legend(loc='upper left')
     return out
 
