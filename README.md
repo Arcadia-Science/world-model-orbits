@@ -40,6 +40,23 @@ conda activate world-model-orbits
 pip install -e .          # makes the `analysis` package importable
 ```
 
+Figures use Arcadia's style via `arcadia-pycolor`, which expects the [Atkinson
+Hyperlegible Next](https://fonts.google.com/specimen/Atkinson+Hyperlegible+Next)
+and [Atkinson Hyperlegible Mono](https://fonts.google.com/specimen/Atkinson+Hyperlegible+Mono)
+fonts. These are a system dependency that conda cannot install, and without them
+the figures still render but silently fall back to matplotlib's default typeface:
+
+```bash
+mkdir -p ~/.local/share/fonts/atkinson && cd ~/.local/share/fonts/atkinson
+base=https://raw.githubusercontent.com/google/fonts/main/ofl
+curl -sL -o AtkinsonHyperlegibleNext.ttf \
+  "$base/atkinsonhyperlegiblenext/AtkinsonHyperlegibleNext%5Bwght%5D.ttf"
+curl -sL -o AtkinsonHyperlegibleMono.ttf \
+  "$base/atkinsonhyperlegiblemono/AtkinsonHyperlegibleMono%5Bwght%5D.ttf"
+fc-cache -f ~/.local/share/fonts
+rm -f ~/.cache/matplotlib/fontlist-*.json   # matplotlib caches its font list
+```
+
 ### 2. Generate the dataset
 
 Writes 20,000 Kepler trajectories (10k train + 10k test) to `data_cv/`:

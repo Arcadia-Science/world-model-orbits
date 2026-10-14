@@ -31,6 +31,7 @@ The derivations behind these functions are written out in `decomposition_notes.m
 import io
 import contextlib
 
+import arcadia_pycolor as apc
 import numpy as np
 import torch
 
@@ -98,44 +99,29 @@ def collect_terms(model, block_size, n_windows, seed=0, offset=0):
 
 # Fixed hue order for the three ELM terms -- assigned by identity, never cycled.
 # Checked for colourblind separation (worst adjacent pair dE 24.6 protan).
-_TERM_COLOURS = ('#ff7f0e', '#1f77b4', '#9467bd')     # prev, recent, positional
+_TERM_COLOURS = (str(apc.amber), str(apc.aegean), str(apc.aster))   # prev, recent, positional
 
-# Arcadia palette. Kept here rather than taken from `arcadia_pycolor`, which the
-# environment does not install -- see env.yml.
-ARC_SLATE = '#403F4C'   # axes, text
-ARC_VIBE  = '#5088C5'   # primary scatter
-ARC_CORAL = '#F28360'   # fit line
-ARC_GRID  = '#E8E8ED'   # light gridlines
-ARC_DIAG  = '#8A8A99'   # y = x reference
+# Arcadia palette, from the `arcadia_pycolor` package (see env.yml).
+# Only data colours are named here; axes, text, grid and fonts are set by
+# apc.mpl.setup() via apply_figure_style() below.
+ARC_VIBE  = str(apc.aegean)    # primary scatter
+ARC_CORAL = str(apc.amber)     # fit line
+ARC_DIAG  = str(apc.bark)      # y = x reference
 
 
 def apply_figure_style():
-    """Set the publication's matplotlib defaults, once, for every figure.
+    """Load Arcadia's matplotlib style, once, before the first figure.
 
-    rcParams is global and permanent, so this has to run before the first figure
-    is drawn -- applying it partway through a notebook silently gives the figures
-    above it one style and those below it another.
+    Delegates to arcadia_pycolor, which sets fonts, colours, the categorical
+    prop cycle, tick and spine styling, and dpi. rcParams is global and
+    permanent, so this has to run before anything is drawn -- applying it partway
+    through a notebook silently gives the figures above it one style and those
+    below it another.
+
+    Figure sizes are NOT set here; each figure picks one of Arcadia's canonical
+    sizes from apc.mpl.FIGURE_SIZES_IN_INCHES.
     """
-    import matplotlib as mpl
-    mpl.rcParams.update({
-        'font.family':        'sans-serif',
-        'font.sans-serif':    ['Helvetica Neue', 'Arial', 'DejaVu Sans'],
-        'font.size':          11,
-        'axes.spines.top':    False,
-        'axes.spines.right':  False,
-        'axes.spines.left':   True,
-        'axes.spines.bottom': True,
-        'axes.edgecolor':     ARC_SLATE,
-        'axes.linewidth':     0.8,
-        'axes.labelcolor':    ARC_SLATE,
-        'xtick.color':        ARC_SLATE,
-        'ytick.color':        ARC_SLATE,
-        'xtick.major.width':  0.8,
-        'ytick.major.width':  0.8,
-        'text.color':         ARC_SLATE,
-        'figure.facecolor':   'white',
-        'axes.facecolor':     'white',
-    })
+    apc.mpl.setup()
 
 
 def plot_coefficient_plane(ax, coeffs):
@@ -322,11 +308,10 @@ def plot_kick_terms(axes, content, positional, windows, dt):
         ax.set_xlim(lo, hi); ax.set_ylim(lo, hi); ax.set_aspect('equal')
         ax.set_xlabel(r'content residual / $|\mathbf{g}|$')
         ax.set_ylabel(r'positional (wpe) / $|\mathbf{g}|$')
-        ax.text(0.03, 0.97, letter, transform=ax.transAxes, va='top', ha='left',
-                fontsize=11)
-        ax.legend(fontsize=8, loc='upper right')
-    cb = axes[0].figure.colorbar(sc, ax=list(axes[:2]), fraction=0.046, pad=0.03)
-    cb.set_label(r'$|\mathbf{r}_t|$')
+        ax.text(0.03, 0.97, letter, transform=ax.transAxes, va='top', ha='left')
+        ax.legend(loc='upper right')
+        cb = ax.figure.colorbar(sc, ax=ax, fraction=0.046, pad=0.03)
+        cb.set_label(r'$|\mathbf{r}_t|$')
 
     # --- (c): the radial division against radius ---------------------------------
     ax = axes[2]
@@ -428,13 +413,13 @@ def _mirror_scatter(ax, cx, cy, radius, sym, title, vlo, vhi, pct=99, pad=0.10):
     ax.set_xlim(xL, xR); ax.set_ylim(yB, yT); ax.set_aspect('equal')
     ax.set_xlabel(fr'${sym}_t$  (recent block)')
     ax.set_ylabel(fr'${sym}_{{t-1}}$  (previous block)')
-    ax.set_title(title, fontsize=11)
+    ax.set_title(title)
     slope = np.polyfit(cx, cy, 1)[0]
     dep = np.median(np.abs(cx + cy) / np.abs(cx))
     ax.text(0.04, 0.04, f'slope {slope:+.2f}\ndeparture {dep:.0%}',
-            transform=ax.transAxes, fontsize=9, va='bottom',
+            transform=ax.transAxes, va='bottom',
             bbox=dict(boxstyle='round', fc='white', ec='0.7', alpha=0.85))
-    ax.legend(fontsize=8, loc='upper right')
+    ax.legend(loc='upper right')
     return sc, float(slope), float(dep)
 
 
@@ -465,7 +450,7 @@ def plot_residual_structure(axes, all_blocks, windows):
     vlo, vhi = np.percentile(radius, [2, 98])
 
     # --- (a) entry-wise negation -------------------------------------------------
-    ax = axes[0, 0]
+    ax = axes[0]
     x = (-st['dJr']).reshape(-1); y = st['dJp'].reshape(-1)
     lim = 1.05 * max(np.abs(x).max(), np.abs(y).max())
     ax.plot([-lim, lim], [-lim, lim], 'k--', lw=1.3, label=r'$\mathrm{d}J_{t-1} = -\mathrm{d}J_t$')
@@ -474,14 +459,14 @@ def plot_residual_structure(axes, all_blocks, windows):
     ax.set_xlim(-lim, lim); ax.set_ylim(-lim, lim); ax.set_aspect('equal')
     ax.axhline(0, color='0.85', lw=0.5); ax.axvline(0, color='0.85', lw=0.5)
     ax.set_xlabel(r'$-\,(\mathrm{d}J_t)_{ij}$'); ax.set_ylabel(r'$(\mathrm{d}J_{t-1})_{ij}$')
-    ax.set_title('(a) Every entry: previous $= -$ recent', fontsize=11)
-    ax.text(0.04, 0.88, fr"$R^2 = {st['r2']:.3f}$", transform=ax.transAxes, fontsize=9,
+    ax.set_title('(a) Every entry: previous $= -$ recent')
+    ax.text(0.04, 0.88, fr"$R^2 = {st['r2']:.3f}$", transform=ax.transAxes,
             bbox=dict(boxstyle='round', fc='white', ec='0.7', alpha=0.85))
-    ax.legend(fontsize=8, loc='lower right')
+    ax.legend(loc='lower right')
 
     # --- (b) the blocks are scaled rotations -------------------------------------
     # the scores all exceed ~0.97, so a [0, 1] axis collapses them into one bin
-    ax = axes[0, 1]
+    ax = axes[1]
     xlo = min(0.95, float(np.percentile(np.r_[st['score_r'], st['score_p']], 0.5)))
     for key, colour, lab in [('score_r', 'tab:purple', 'recent'),
                              ('score_p', 'tab:orange', 'previous')]:
@@ -491,22 +476,23 @@ def plot_residual_structure(axes, all_blocks, windows):
     ax.set_xlim(xlo, 1.0 + 0.02 * (1.0 - xlo))
     ax.annotate(f"an unstructured $2\\times2$ matrix\nwould sit at {st['score_random']:.2f},\n"
                 "far off-scale to the left",
-                xy=(0.03, 0.60), xycoords='axes fraction', fontsize=7.5, color='tab:red')
+                xy=(0.03, 0.60), xycoords='axes fraction', color='tab:red')
     ax.set_xlabel(r'rotation score  $a^2/(a^2+\mathrm{shear}^2)$')
     ax.set_ylabel('windows')
-    ax.set_title('(b) Each block is a near-pure scaled rotation', fontsize=11)
-    ax.legend(fontsize=7.5, loc='upper left')
+    ax.set_title('(b) Each block is a near-pure scaled rotation')
+    ax.legend(loc='upper left')
 
     # --- (c), (d) the two invariant coefficients, one panel each ------------------
     sc, st['slope_a'], st['dep_a'] = _mirror_scatter(
-        axes[1, 0], st['a_r'], st['a_p'], radius, 'a',
+        axes[2], st['a_r'], st['a_p'], radius, 'a',
         '(c) Rotation generators are equal-and-opposite', vlo, vhi)
     sc, st['slope_d'], st['dep_d'] = _mirror_scatter(
-        axes[1, 1], st['d_r'], st['d_p'], radius, 'c',
+        axes[3], st['d_r'], st['d_p'], radius, 'c',
         '(d) Isotropic coefficients only about half so', vlo, vhi)
 
-    cb = axes[0, 0].figure.colorbar(sc, ax=axes.ravel().tolist(), fraction=0.030, pad=0.02)
-    cb.set_label(r'$|\mathbf{r}_t|$')
+    for ax in axes:
+        cb = ax.figure.colorbar(sc, ax=ax, fraction=0.046, pad=0.03)
+        cb.set_label(r'$|\mathbf{r}_t|$')
     return st
 
 
