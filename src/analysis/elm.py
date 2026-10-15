@@ -33,6 +33,8 @@ import contextlib
 
 import arcadia_pycolor as apc
 import matplotlib as mpl
+import matplotlib.pyplot as plt
+from matplotlib.offsetbox import DrawingArea
 import numpy as np
 import torch
 
@@ -130,6 +132,40 @@ def apply_figure_style():
     mpl.rcParams['legend.borderaxespad'] = 0.5
 
 
+def style_panel(axes=None, **kwargs):
+    """Arcadia's per-axes styling, minus the legend separator rule.
+
+    apc.mpl.style_plot inserts a horizontal chateau line as the first row of the
+    legend box. It is meant to sit beneath a legend *title*; none of this pub's
+    legends have titles, so it renders as a rule floating above the first entry
+    with nothing above it to separate. Everything else style_plot does -- label
+    capitalisation, tick and spine styling, monospaced numerals -- is kept.
+
+    Takes the same arguments as apc.mpl.style_plot. Reaches into matplotlib's
+    private legend layout, but via the same attribute apc's add_legend_line uses
+    to insert the rule, so the two cannot drift apart independently.
+    """
+    apc.mpl.style_plot(axes, **kwargs)
+
+    ax = axes if axes is not None else plt.gca()
+    legend = ax.get_legend()
+    if legend is None:
+        return
+    try:
+        entries = legend._legend_handle_box.get_children()[0].get_children()
+    except (AttributeError, IndexError):      # apc/matplotlib changed the layout
+        return
+    if entries and isinstance(entries[0], DrawingArea):
+        entries.pop(0)
+
+    # Scatter plots here use alpha to show density, which matplotlib copies onto the
+    # legend swatches, where it only makes them hard to read -- a legend key has no
+    # overplotting to reveal. Force every handle opaque; the body keeps its alpha.
+    for handle in legend.legend_handles:
+        if handle is not None:
+            handle.set_alpha(1.0)
+
+
 def plot_coefficient_plane(ax, coeffs):
     """The model's position in (c_{t-1}, c_t) space, one point per window.
 
@@ -150,11 +186,11 @@ def plot_coefficient_plane(ax, coeffs):
 
     ax.scatter(c_prev, c_recent, alpha=0.25, color='tab:blue',
                label='Per-window', zorder=2)
-    ax.scatter([c_prev.mean()], [c_recent.mean()], marker='o',
-               color='tab:blue', edgecolor='k', zorder=4,
+    ax.scatter([c_prev.mean()], [c_recent.mean()], s=130, marker='o',
+               linewidths=1.8, color='tab:blue', edgecolor='k', zorder=4,
                label=f'Measured mean')
-    ax.scatter([-1], [2], marker='o', color='tab:red', edgecolor='k',
-               label='Inertial point (-1, 2)', zorder=5)
+    ax.scatter([-1], [2], marker='o', color='tab:red', s=130, edgecolor='k',
+               linewidths=1.8, label='Inertial point (-1, 2)', zorder=5)
 
     lo = min(-1.5, float(c_prev.min()))
     hi = max(2.5, float(c_recent.max()))
@@ -190,7 +226,7 @@ def plot_term_magnitudes(ax, content, positional, radius):
     series = [
         (r'$J_{t-1}\,r_{t-1}$',        nrm(content[:, T - 2])),
         (r'$J_t\,r_t$',                nrm(content[:, T - 1])),
-        (r'$P$ (wpe)',                   nrm(positional)),
+        (r'$P$',                       nrm(positional)),
     ]
     for (label, mag), colour in zip(series, _TERM_COLOURS):
         ax.scatter(radius, mag, alpha=0.5, color=colour, linewidths=0,
@@ -290,8 +326,8 @@ def plot_kick_terms(axes, content, positional, windows, dt):
             np.polyfit(np.log(radius), np.log(np.linalg.norm(v, axis=1)), 1)[0])
 
     series = [('content residual', t['content'], '#1f77b4'),
-              ('positional (wpe)', t['positional'], '#9467bd'),
-              ('their sum', t['total'], 'tab:green')]
+              ('positional term', t['positional'], '#9467bd'),
+              ('Sum', t['total'], 'tab:green')]
 
     # --- (a), (b): the two components against their constraint lines --------------
     # Panel letters are supplied by Quarto's subfigure layout, not drawn here.
@@ -313,7 +349,7 @@ def plot_kick_terms(axes, content, positional, windows, dt):
         ax.axhline(0, color='0.88', lw=0.6); ax.axvline(0, color='0.88', lw=0.6)
         ax.set_xlim(lo, hi); ax.set_ylim(lo, hi); ax.set_aspect('equal')
         ax.set_xlabel(r'content residual / $|\mathbf{g}|$')
-        ax.set_ylabel(r'positional (wpe) / $|\mathbf{g}|$')
+        ax.set_ylabel(r'positional term/ $|\mathbf{g}|$')
         ax.legend(loc='upper right')
         cb = ax.figure.colorbar(sc, ax=ax, fraction=0.046, pad=0.03)
         cb.set_label(r'$|\mathbf{r}_t|$')
@@ -394,7 +430,7 @@ def residual_structure(all_blocks, windows):
                 score_random=float(np.median(parts(rng.normal(size=(20000, 2, 2)))[2])))
 
 
-def _mirror_scatter(ax, cx, cy, radius, sym, title, vlo, vhi, pct=99, pad=0.10):
+def _mirror_scatter(ax, cx, cy, radius, sym, vlo, vhi, pct=99, pad=0.10):
     """Previous-block coefficient against recent-block, with the y = -x reference.
 
     Square box snug to the data with equal aspect, so the -45 deg
@@ -417,7 +453,6 @@ def _mirror_scatter(ax, cx, cy, radius, sym, title, vlo, vhi, pct=99, pad=0.10):
     ax.set_xlim(xL, xR); ax.set_ylim(yB, yT); ax.set_aspect('equal')
     ax.set_xlabel(fr'${sym}_t$  (recent block)')
     ax.set_ylabel(fr'${sym}_{{t-1}}$  (previous block)')
-    ax.set_title(title)
     slope = np.polyfit(cx, cy, 1)[0]
     dep = np.median(np.abs(cx + cy) / np.abs(cx))
     ax.text(0.04, 0.04, f'slope {slope:+.2f}\ndeparture {dep:.0%}',
@@ -463,7 +498,6 @@ def plot_residual_structure(axes, all_blocks, windows):
     ax.set_xlim(-lim, lim); ax.set_ylim(-lim, lim); ax.set_aspect('equal')
     ax.axhline(0, color='0.85', lw=0.5); ax.axvline(0, color='0.85', lw=0.5)
     ax.set_xlabel(r'$-\,(\mathrm{d}J_t)_{ij}$'); ax.set_ylabel(r'$(\mathrm{d}J_{t-1})_{ij}$')
-    ax.set_title('(a) Every entry: previous $= -$ recent')
     ax.text(0.04, 0.88, fr"$R^2 = {st['r2']:.3f}$", transform=ax.transAxes,
             bbox=dict(boxstyle='round', fc='white', ec='0.7', alpha=0.85))
     ax.legend(loc='lower right')
@@ -478,21 +512,15 @@ def plot_residual_structure(axes, all_blocks, windows):
                 label=f"{lab} (median {np.median(st[key]):.3f})")
     ax.axvline(1, color='k', ls='--', lw=1, label='pure rotation')
     ax.set_xlim(xlo, 1.0 + 0.02 * (1.0 - xlo))
-    ax.annotate(f"an unstructured $2\\times2$ matrix\nwould sit at {st['score_random']:.2f},\n"
-                "far off-scale to the left",
-                xy=(0.03, 0.60), xycoords='axes fraction', color='tab:red')
     ax.set_xlabel(r'rotation score  $a^2/(a^2+\mathrm{shear}^2)$')
     ax.set_ylabel('windows')
-    ax.set_title('(b) Each block is a near-pure scaled rotation')
     ax.legend(loc='upper left')
 
     # --- (c), (d) the two invariant coefficients, one panel each ------------------
     sc, st['slope_a'], st['dep_a'] = _mirror_scatter(
-        axes[2], st['a_r'], st['a_p'], radius, 'a',
-        '(c) Rotation generators are equal-and-opposite', vlo, vhi)
+        axes[2], st['a_r'], st['a_p'], radius, 'a', vlo, vhi)
     sc, st['slope_d'], st['dep_d'] = _mirror_scatter(
-        axes[3], st['d_r'], st['d_p'], radius, 'c',
-        '(d) Isotropic coefficients only about half so', vlo, vhi)
+        axes[3], st['d_r'], st['d_p'], radius, 'c', vlo, vhi)
 
     for ax in axes:
         cb = ax.figure.colorbar(sc, ax=ax, fraction=0.046, pad=0.03)
