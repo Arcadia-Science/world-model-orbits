@@ -1,12 +1,39 @@
-# [From Kepler-ish to Newton-ish: Understanding learned world models in transformers]
+# From Kepler-ish to Newton-ish: Understanding learned world models in transformers
 
-This code repository contains or points to all materials required for creating and hosting the publication entitled, *"[From Kepler-ish to Newton-ish: Understanding learned world models in transformers]"*.
+This code repository contains or points to all materials required for creating and hosting the publication entitled, *"From Kepler-ish to Newton-ish: Understanding learned world models in transformers"*.
 
-The publication is hosted at [this URL](https://arcadia-science.github.io/[REPO-NAME]/).
+The publication is hosted at [this URL](https://thestacks.org/publications/result-transformers-world-models).
 
 ## Data Description
 
-[DESCRIPTION OF THE DATA]
+No external data is required: everything the publication analyses is generated and
+trained locally by steps 2–3 below. Both `data_cv/` and `checkpoints/` are untracked
+in git.
+
+**Trajectories** (`data_cv/`, ~27 MB). 20,000 two-body Kepler orbits, split 50/50
+into train and test. Each orbit is 100 samples of the $(x, y)$ coordinates of a point
+mass orbiting a fixed central mass with $GM = 1$, started at perihelion and integrated
+with `scipy.integrate.solve_ivp` at `rtol = atol = 1e-8`. Eccentricity, semi-major axis
+and initial orientation are drawn uniformly per orbit from $[0, 0.8)$, $[0.5, 2.0)$ and
+$[0, 2\pi)$; coordinates span roughly $\pm 3.5$. Samples are spaced $20/99 \approx 0.202$
+apart rather than the nominal `dt = 0.2` — an artifact of the upstream `t_eval` that we
+reproduce deliberately, since the checkpoints were trained on data sampled this way.
+Generation is seeded (`seed = 1`).
+
+| file | contents |
+|---|---|
+| `trajectories_chunk_{000000,000001}.pt` | float32 tensors of shape (10000, 100, 2) — the coordinates themselves |
+| `orbital_params_chunk_*.py` | per-orbit eccentricity, semi-major/minor axes, linear eccentricity, mean radius, Laplace–Runge–Lenz vector, initial orientation |
+| `euler_error_chunk_*.pt` | per-timestep deviation of a forward-Euler integration from the reference solution |
+| `metadata.pt` | generation settings and coordinate ranges |
+
+**Checkpoints** (`checkpoints/kepler_cv_blocksize_elm/`, ~424 KB). Three bias-free
+nanoGPT models — 2 layers, 1 head, width 32, two-dimensional input — identical apart
+from the context length and training-noise settings tabulated in step 3. Removing the
+biases is what makes the equivalent-linear-mapping analysis exact.
+
+Trajectory generation and the training loop are adapted from Liu et al.'s
+[newton-kepler](https://github.com/KindXiaoming/newton-kepler)
 
 ## Reproduce
 
