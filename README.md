@@ -15,10 +15,7 @@ into train and test. Each orbit is 100 samples of the $(x, y)$ coordinates of a 
 mass orbiting a fixed central mass with $GM = 1$, started at perihelion and integrated
 with `scipy.integrate.solve_ivp` at `rtol = atol = 1e-8`. Eccentricity, semi-major axis
 and initial orientation are drawn uniformly per orbit from $[0, 0.8)$, $[0.5, 2.0)$ and
-$[0, 2\pi)$; coordinates span roughly $\pm 3.5$. Samples are spaced $20/99 \approx 0.202$
-apart rather than the nominal `dt = 0.2` — an artifact of the upstream `t_eval` that we
-reproduce deliberately, since the checkpoints were trained on data sampled this way.
-Generation is seeded (`seed = 1`).
+$[0, 2\pi)$; coordinates span roughly $\pm 3.5$. Generation is seeded (`seed = 1`).
 
 | file | contents |
 |---|---|

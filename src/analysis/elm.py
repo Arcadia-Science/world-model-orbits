@@ -100,16 +100,45 @@ def collect_terms(model, block_size, n_windows, seed=0, offset=0):
     return all_blocks, coeffs, content, positional, radius, float(np.max(recon_errs))
 
 
-# Fixed hue order for the three ELM terms -- assigned by identity, never cycled.
-# Checked for colourblind separation (worst adjacent pair dE 24.6 protan).
-_TERM_COLOURS = (str(apc.amber), str(apc.aegean), str(apc.aster))   # prev, recent, positional
+# Arcadia palette, from the `arcadia_pycolor` package (see env.yml). Only data
+# colours are named here; axes, text, grid and fonts come from apc.mpl.setup()
+# via apply_figure_style() below.
+#
+# One hue set per semantic axis, so a colour carries the same meaning in every
+# figure. Hues are assigned by identity and never cycled, and each set is kept
+# internally distinguishable rather than merely pretty.
 
-# Arcadia palette, from the `arcadia_pycolor` package (see env.yml).
-# Only data colours are named here; axes, text, grid and fonts are set by
-# apc.mpl.setup() via apply_figure_style() below.
+# Which input a quantity belongs to. Used for the three ELM terms and wherever
+# the two context positions are drawn separately.
+C_TOKEN_PREV   = str(apc.amber)     # previous token, r_{t-1}
+C_TOKEN_RECENT = str(apc.aegean)    # recent token,   r_t
+C_TOKEN_POS    = str(apc.canary)    # positional term, P
+
+# Which trained model a series comes from.
+C_MODEL_NOISY     = str(apc.wish)    # noise_scale = 0.1
+C_MODEL_NOISELESS = str(apc.dragon)  # noise_scale = 0.0
+
+# Which context length a series comes from (figure 3 only).
+C_CTX_2   = str(apc.rose)
+C_CTX_100 = str(apc.seaweed)
+
+# Ground truth vs an idealised integrator. Both are neutrals, so a model's own
+# series keeps the only saturated hue wherever the two are drawn together.
+C_TRUE  = str(apc.steel)   # the true orbit, or the correct answer
+C_IDEAL = str(apc.steel)    # an ideal Verlet integrator
+C_MODEL = str(apc.amber)   # a model's own output, shown against ground truth
+
+# A total formed by summing other series.
+C_SUM = str(apc.dragon)
+
+# Fixed hue order for the three ELM terms: prev, recent, positional.
+_TERM_COLOURS = (C_TOKEN_PREV, C_TOKEN_RECENT, C_TOKEN_POS)
+
+# Role colours for figures that show a single, unlabelled series.
 ARC_VIBE  = str(apc.aegean)    # primary scatter
 ARC_CORAL = str(apc.amber)     # fit line
-ARC_DIAG  = str(apc.bark)      # y = x reference
+ARC_DIAG  = str(apc.steel)      # y = x reference
+
 
 
 def apply_figure_style():
@@ -184,18 +213,18 @@ def plot_coefficient_plane(ax, coeffs):
     T = coeffs.shape[1]
     c_prev, c_recent = coeffs[:, T - 2], coeffs[:, T - 1]
 
-    ax.scatter(c_prev, c_recent, alpha=0.25, color='tab:blue',
+    ax.scatter(c_prev, c_recent, alpha=0.25, color=ARC_VIBE,
                label='Per-window', zorder=2)
     ax.scatter([c_prev.mean()], [c_recent.mean()], s=130, marker='o',
-               linewidths=1.8, color='tab:blue', edgecolor='k', zorder=4,
+               linewidths=1.8, color=ARC_VIBE, edgecolor='k', zorder=4,
                label=f'Measured mean')
-    ax.scatter([-1], [2], marker='o', color='tab:red', s=130, edgecolor='k',
+    ax.scatter([-1], [2], marker='o', color=apc.dragon, s=130, edgecolor='k',
                linewidths=1.8, label='Inertial point (-1, 2)', zorder=5)
 
     lo = min(-1.5, float(c_prev.min()))
     hi = max(2.5, float(c_recent.max()))
     xs = np.linspace(lo, hi, 50)
-    ax.plot(xs, 1 - xs, ls='--', color='gray', lw=1, zorder=1,
+    ax.plot(xs, 1 - xs, ls='--', color=ARC_DIAG, lw=1.5, zorder=1,
             label=r'$c_{t-1}+c_t=1$')
 
     ax.set_xlabel(r'$c_{t-1}$  (previous position)')
@@ -224,16 +253,16 @@ def plot_term_magnitudes(ax, content, positional, radius):
     nrm = lambda a: np.linalg.norm(a, axis=-1)
 
     series = [
-        (r'$J_{t-1}\,r_{t-1}$',        nrm(content[:, T - 2])),
-        (r'$J_t\,r_t$',                nrm(content[:, T - 1])),
-        (r'$P$',                       nrm(positional)),
+        (r'$J_{t-1}\,\mathbf{r}_{t-1}$', nrm(content[:, T - 2])),
+        (r'$J_t\,\mathbf{r}_t$',         nrm(content[:, T - 1])),
+        (r'$\mathbf{P}$',                nrm(positional)),
     ]
     for (label, mag), colour in zip(series, _TERM_COLOURS):
         ax.scatter(radius, mag, alpha=0.5, color=colour, linewidths=0,
                    label=f'{label}')
 
     ax.set_yscale('log')
-    ax.set_xlabel(r'$|r_t|$')
+    ax.set_xlabel(r'$|\mathbf{r}_t|$')
     ax.set_ylabel('Magnitude of ELM term')
     ax.set_axisbelow(True)
     ax.legend(loc='lower right')
@@ -325,9 +354,9 @@ def plot_kick_terms(axes, content, positional, windows, dt):
         out['exponent'][label] = float(
             np.polyfit(np.log(radius), np.log(np.linalg.norm(v, axis=1)), 1)[0])
 
-    series = [('content residual', t['content'], '#1f77b4'),
-              ('positional term', t['positional'], '#9467bd'),
-              ('Sum', t['total'], 'tab:green')]
+    series = [('content residual', t['content'], apc.seaweed),
+              ('positional term', t['positional'], C_TOKEN_POS),
+              ('Sum', t['total'], apc.aster)]
 
     # --- (a), (b): the two components against their constraint lines --------------
     # Panel letters are supplied by Quarto's subfigure layout, not drawn here.
@@ -390,7 +419,7 @@ def plot_kick_terms(axes, content, positional, windows, dt):
     ax.axhline(0, color='0.6', lw=0.8)
     ax.set_ylim(-1.6, 3.0)
     ax.set_xlabel(r'$|\mathbf{r}_t|$')
-    ax.set_ylabel(r'radial component / $|g|$')
+    ax.set_ylabel(r'radial component / $|\mathbf{g}|$')
     ax.legend(loc='upper left')
     return out
 
@@ -493,8 +522,8 @@ def plot_residual_structure(axes, all_blocks, windows):
     x = (-st['dJr']).reshape(-1); y = st['dJp'].reshape(-1)
     lim = 1.05 * max(np.abs(x).max(), np.abs(y).max())
     ax.plot([-lim, lim], [-lim, lim], 'k--', lw=1.3, label=r'$\mathrm{d}J_{t-1} = -\mathrm{d}J_t$')
-    sc = ax.scatter(x, y, s=7, alpha=0.5, c=np.repeat(radius, 4), cmap='viridis',
-                    vmin=vlo, vmax=vhi, linewidths=0)
+    sc_a = ax.scatter(x, y, s=7, alpha=0.5, c=np.repeat(radius, 4), cmap='viridis',
+                      vmin=vlo, vmax=vhi, linewidths=0)
     ax.set_xlim(-lim, lim); ax.set_ylim(-lim, lim); ax.set_aspect('equal')
     ax.axhline(0, color='0.85', lw=0.5); ax.axvline(0, color='0.85', lw=0.5)
     ax.set_xlabel(r'$-\,(\mathrm{d}J_t)_{ij}$'); ax.set_ylabel(r'$(\mathrm{d}J_{t-1})_{ij}$')
@@ -506,24 +535,28 @@ def plot_residual_structure(axes, all_blocks, windows):
     # the scores all exceed ~0.97, so a [0, 1] axis collapses them into one bin
     ax = axes[1]
     xlo = min(0.95, float(np.percentile(np.r_[st['score_r'], st['score_p']], 0.5)))
-    for key, colour, lab in [('score_r', 'tab:purple', 'recent'),
-                             ('score_p', 'tab:orange', 'previous')]:
+    for key, colour, lab in [('score_r', C_TOKEN_RECENT, 'recent'),
+                             ('score_p', C_TOKEN_PREV,   'previous')]:
         ax.hist(st[key], bins=40, range=(xlo, 1.0), color=colour, alpha=0.55,
-                label=f"{lab} (median {np.median(st[key]):.3f})")
-    ax.axvline(1, color='k', ls='--', lw=1, label='pure rotation')
+                label=f"{lab}")
     ax.set_xlim(xlo, 1.0 + 0.02 * (1.0 - xlo))
     ax.set_xlabel(r'rotation score  $a^2/(a^2+\mathrm{shear}^2)$')
     ax.set_ylabel('windows')
     ax.legend(loc='upper left')
 
     # --- (c), (d) the two invariant coefficients, one panel each ------------------
-    sc, st['slope_a'], st['dep_a'] = _mirror_scatter(
+    sc_c, st['slope_a'], st['dep_a'] = _mirror_scatter(
         axes[2], st['a_r'], st['a_p'], radius, 'a', vlo, vhi)
-    sc, st['slope_d'], st['dep_d'] = _mirror_scatter(
+    sc_d, st['slope_d'], st['dep_d'] = _mirror_scatter(
         axes[3], st['d_r'], st['d_p'], radius, 'c', vlo, vhi)
 
-    for ax in axes:
-        cb = ax.figure.colorbar(sc, ax=ax, fraction=0.046, pad=0.03)
+    # Each panel is its own Figure, so a panel's colourbar has to be built from
+    # that panel's own mappable.  Reusing one mappable across all three warns, and
+    # is only correct by accident: it happens to share cmap and vmin/vmax here.
+    # (b) is a histogram, not a radius-coloured scatter, so it gets no colourbar --
+    # one there would imply an encoding the panel does not use.
+    for ax, mappable in ((axes[0], sc_a), (axes[2], sc_c), (axes[3], sc_d)):
+        cb = ax.figure.colorbar(mappable, ax=ax, fraction=0.046, pad=0.03)
         cb.set_label(r'$|\mathbf{r}_t|$')
     return st
 
