@@ -196,8 +196,9 @@ def train_model(model, train_inputs, train_targets, test_inputs, test_targets, t
     eval_results = []
     eval_steps = []
 
-    # Setup activation hooks once (will be reused for all evaluations)
-    hooks, activation_dict = setup_activation_hooks(model)
+    # Activation hooks are registered only for the final probes; registering them
+    # here would make every training forward pass store activations.
+    hooks, activation_dict = [], {}
 
     # Initial memory stats
     initial_memory = print_gpu_memory_stats("Initial: ")
@@ -259,8 +260,9 @@ def train_model(model, train_inputs, train_targets, test_inputs, test_targets, t
             if i % 500 == 0 and i > 0:
                 clear_gpu_cache()
 
-        # Evaluate at specified frequency.
-        if i % prob_freq == 0:
+        # Evaluate at specified frequency, and always on the last step (which is
+        # where the final probes run, and need not be a multiple of prob_freq).
+        if i % prob_freq == 0 or i == n_steps - 1:
             print(f"\nEvaluating at step {i+1}...")
             eval_step_results = {}
 
@@ -782,7 +784,11 @@ def sweep_parameters(block_size_list, num_trajectories_list, noise_scale_list, l
     # do not clobber the standard single-step (horizon=1) runs.
     rollout_tag = '' if rollout_horizon == 1 else f'_rollout_{rollout_horizon}'
 
-    num_traj = 10000
+    def results_path(block_size, num_traj, noise_scale, loss_mask):
+        # One definition shared by the resume-skip check and the save below.
+        return (f'./results/kepler_cv_blocksize_elm/results_block_size_{block_size}'
+                f'_num_trajectories_{num_traj}_noise_scale_{noise_scale}'
+                f'_loss_mask_{loss_mask}{rollout_tag}.pt')
 
     # Pre-filter configurations to skip existing results
     configs_to_run = []
@@ -790,7 +796,7 @@ def sweep_parameters(block_size_list, num_trajectories_list, noise_scale_list, l
         for noise_scale in noise_scale_list:
             for num_traj in num_trajectories_list:
                 for loss_mask in loss_mask_list:
-                    results_filename = f'./results/kepler_cv_blocksize_elm/results_block_size_{block_size}_num_trajectories_{num_traj}_noise_scale_{noise_scale}_loss_mask_{loss_mask}_seed_{seed}{rollout_tag}.pt'
+                    results_filename = results_path(block_size, num_traj, noise_scale, loss_mask)
                     if not os.path.exists(results_filename):
                         configs_to_run.append((block_size, num_traj, noise_scale, loss_mask))
                     else:
@@ -816,7 +822,7 @@ def sweep_parameters(block_size_list, num_trajectories_list, noise_scale_list, l
         )
 
         # save results to file (separate directory for ELM variant)
-        results_filename = f'./results/kepler_cv_blocksize_elm/results_block_size_{block_size}_num_trajectories_{num_traj}_noise_scale_{noise_scale}_loss_mask_{loss_mask}{rollout_tag}.pt'
+        results_filename = results_path(block_size, num_traj, noise_scale, loss_mask)
         os.makedirs(os.path.dirname(results_filename), exist_ok=True)
         torch.save(results, results_filename)
         print(f"Saved results to {results_filename}")
