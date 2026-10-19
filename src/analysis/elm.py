@@ -540,7 +540,7 @@ def plot_residual_structure(axes, all_blocks, windows):
         ax.hist(st[key], bins=40, range=(xlo, 1.0), color=colour, alpha=0.55,
                 label=f"{lab}")
     ax.set_xlim(xlo, 1.0 + 0.02 * (1.0 - xlo))
-    ax.set_xlabel(r'rotation score  $a^2/(a^2+\mathrm{shear}^2)$')
+    ax.set_xlabel(r'Rotation score')
     ax.set_ylabel('windows')
     ax.legend(loc='upper left')
 
