@@ -115,7 +115,7 @@ C_TOKEN_RECENT = str(apc.aegean)    # recent token,   r_t
 C_TOKEN_POS    = str(apc.canary)    # positional term, P
 
 # Which trained model a series comes from.
-C_MODEL_NOISY     = str(apc.wish)    # noise_scale = 0.1
+C_MODEL_NOISY     = str(apc.teal)    # noise_scale = 0.1
 C_MODEL_NOISELESS = str(apc.dragon)  # noise_scale = 0.0
 
 # Which context length a series comes from (figure 3 only).
@@ -124,7 +124,7 @@ C_CTX_100 = str(apc.seaweed)
 
 # Ground truth vs an idealised integrator. Both are neutrals, so a model's own
 # series keeps the only saturated hue wherever the two are drawn together.
-C_TRUE  = str(apc.steel)   # the true orbit, or the correct answer
+C_TRUE  = str(apc.marine)   # the true orbit, or the correct answer
 C_IDEAL = str(apc.steel)    # an ideal Verlet integrator
 C_MODEL = str(apc.amber)   # a model's own output, shown against ground truth
 
@@ -135,9 +135,9 @@ C_SUM = str(apc.dragon)
 _TERM_COLOURS = (C_TOKEN_PREV, C_TOKEN_RECENT, C_TOKEN_POS)
 
 # Role colours for figures that show a single, unlabelled series.
-ARC_VIBE  = str(apc.aegean)    # primary scatter
+ARC_VIBE  = str(apc.marine)    # primary scatter
 ARC_CORAL = str(apc.amber)     # fit line
-ARC_DIAG  = str(apc.steel)      # y = x reference
+ARC_DIAG  = str(apc.mud)      # y = x reference
 
 
 
@@ -214,7 +214,7 @@ def plot_coefficient_plane(ax, coeffs):
     c_prev, c_recent = coeffs[:, T - 2], coeffs[:, T - 1]
 
     ax.scatter(c_prev, c_recent, alpha=0.25, color=ARC_VIBE,
-               label='Per-window', zorder=2)
+               label='Per-window', zorder=1)
     ax.scatter([c_prev.mean()], [c_recent.mean()], s=130, marker='o',
                linewidths=1.8, color=ARC_VIBE, edgecolor='k', zorder=4,
                label=f'Measured mean')
@@ -224,7 +224,7 @@ def plot_coefficient_plane(ax, coeffs):
     lo = min(-1.5, float(c_prev.min()))
     hi = max(2.5, float(c_recent.max()))
     xs = np.linspace(lo, hi, 50)
-    ax.plot(xs, 1 - xs, ls='--', color=ARC_DIAG, lw=1.5, zorder=1,
+    ax.plot(xs, 1 - xs, ls='--', color=ARC_DIAG, lw=1.5, zorder=2,
             label=r'$c_{t-1}+c_t=1$')
 
     ax.set_xlabel(r'$c_{t-1}$  (previous position)')
