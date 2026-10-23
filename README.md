@@ -2,7 +2,7 @@
 
 This code repository contains or points to all materials required for creating and hosting the publication entitled, *"From Kepler-ish to Newton-ish: Understanding learned world models in transformers"*.
 
-The publication is hosted at [this URL](https://thestacks.org/publications/result-transformers-world-models).
+The publication is hosted at [this URL](https://arcadia-science.github.io/world-model-orbits/).
 
 ## Data Description
 
@@ -88,6 +88,11 @@ train them yourself. Running it overwrites the committed checkpoints:
 python -m analysis.training           # full run (~20k steps/model, GPU recommended)
 python -m analysis.training --smoke   # fast sanity check (200 steps, not for publication)
 ```
+
+`--smoke` writes its checkpoints and results with a `_smoke` suffix, so it never
+overwrites the committed checkpoints and never satisfies the resume check that
+would otherwise cause a later full run to be skipped. The notebook loads only the
+unsuffixed names, so smoke output cannot silently reach the analyses.
 
 ### 4. Run the analyses
 

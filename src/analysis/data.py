@@ -133,7 +133,7 @@ def load_trajectories(data_dir='data_cv', num_trajectories_needed=None):
     else:
         raise FileNotFoundError(
             f"Trajectories not found in {data_dir}. "
-            f"Please run generate_kepler_cv.py first to generate the dataset."
+            f"Please run analysis.data_generation.py first to generate the dataset."
         )
 
 

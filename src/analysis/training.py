@@ -749,7 +749,8 @@ def train_one_model(block_size=100, noise_scale=0.1, lr=1e-3, n_layer=2, n_embd=
 
 
 def sweep_parameters(block_size_list, num_trajectories_list, noise_scale_list, loss_mask_list=['all'],
-                     lr=1e-3, n_layer=2, n_embd=32, n_steps=1001, prob_freq=100, seed=1, rollout_horizon=1):
+                     lr=1e-3, n_layer=2, n_embd=32, n_steps=1001, prob_freq=100, seed=1, rollout_horizon=1,
+                     smoke=False):
     """
     Sweep over block_size, num_trajectories, noise_scale, and loss_mask parameters.
 
@@ -784,11 +785,16 @@ def sweep_parameters(block_size_list, num_trajectories_list, noise_scale_list, l
     # do not clobber the standard single-step (horizon=1) runs.
     rollout_tag = '' if rollout_horizon == 1 else f'_rollout_{rollout_horizon}'
 
+    # Tag smoke-run output so it cannot be mistaken for, or silently substituted
+    # for, a publication run. The names the notebook loads are the untagged ones,
+    # so a smoke run neither overwrites them nor satisfies the resume-skip check.
+    smoke_tag = '_smoke' if smoke else ''
+
     def results_path(block_size, num_traj, noise_scale, loss_mask):
         # One definition shared by the resume-skip check and the save below.
         return (f'./results/kepler_cv_blocksize_elm/results_block_size_{block_size}'
                 f'_num_trajectories_{num_traj}_noise_scale_{noise_scale}'
-                f'_loss_mask_{loss_mask}{rollout_tag}.pt')
+                f'_loss_mask_{loss_mask}{rollout_tag}{smoke_tag}.pt')
 
     # Pre-filter configurations to skip existing results
     configs_to_run = []
@@ -828,7 +834,9 @@ def sweep_parameters(block_size_list, num_trajectories_list, noise_scale_list, l
         print(f"Saved results to {results_filename}")
 
         # save model checkpoint for ELM analysis
-        checkpoint_filename = f'./checkpoints/kepler_cv_blocksize_elm/model_block_size_{block_size}_num_trajectories_{num_traj}_noise_scale_{noise_scale}{rollout_tag}.pt'
+        checkpoint_filename = (f'./checkpoints/kepler_cv_blocksize_elm/model_block_size_{block_size}'
+                               f'_num_trajectories_{num_traj}_noise_scale_{noise_scale}'
+                               f'{rollout_tag}{smoke_tag}.pt')
         os.makedirs(os.path.dirname(checkpoint_filename), exist_ok=True)
         model.save_checkpoint(
             checkpoint_filename,
@@ -890,6 +898,7 @@ def main():
             n_steps=n_steps,
             prob_freq=100,
             seed=1,
+            smoke=args.smoke,
         )
 
 

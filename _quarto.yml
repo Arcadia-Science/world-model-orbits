@@ -71,7 +71,7 @@ filters:
 - _extensions/filter-warnings/filter-warnings.lua
 comments:
   giscus:
-    repo: Arcadia-Science/notebook-pub-template
+    repo: Arcadia-Science/world-model-orbits
     input-position: top
 reference-location: margin
 bibliography: ref.bib
