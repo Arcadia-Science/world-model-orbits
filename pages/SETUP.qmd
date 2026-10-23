@@ -49,7 +49,14 @@ With a copy of the code and compute environment set up on your local machine, yo
 
 ## Reproduce
 
-The best way to ensure you've correctly set up your code and compute environment is to reproduce this work. Fortunately, the analysis, and therefore the publication itself, can be reproduced with the following command:
+The best way to ensure you've correctly set up your code and compute environment is to reproduce this work.
+
+First regenerate the input data:
+
+```bash
+python -m analysis.data_generation
+```
+Then, the analysis, and therefore the publication itself, can be reproduced with the following command:
 
 ```bash
 make execute
