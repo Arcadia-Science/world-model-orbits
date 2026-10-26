@@ -34,6 +34,8 @@ import contextlib
 import arcadia_pycolor as apc
 import matplotlib as mpl
 import matplotlib.pyplot as plt
+from matplotlib.collections import PathCollection
+from matplotlib.lines import Line2D
 from matplotlib.offsetbox import DrawingArea
 import numpy as np
 import torch
@@ -139,6 +141,12 @@ ARC_VIBE  = str(apc.marine)    # primary scatter
 ARC_CORAL = str(apc.amber)     # fit line
 ARC_DIAG  = str(apc.mud)      # y = x reference
 
+# Minimum area (pt^2) for a scatter marker drawn in a legend key, and minimum
+# width (pt) for a line drawn in one. Both are floors: handles already drawn
+# heavier keep their emphasis.
+LEGEND_MARKER_FLOOR = 70.0
+LEGEND_LINE_FLOOR = 2.0
+
 
 
 def apply_figure_style():
@@ -190,9 +198,22 @@ def style_panel(axes=None, **kwargs):
     # Scatter plots here use alpha to show density, which matplotlib copies onto the
     # legend swatches, where it only makes them hard to read -- a legend key has no
     # overplotting to reveal. Force every handle opaque; the body keeps its alpha.
+    # Marker size is the same story: point sizes are chosen for density in the plot
+    # body (s=12 to s=36 here) and come out too small to read in the key. Lift small
+    # scatter handles to a floor rather than scaling every handle, so deliberately
+    # emphasised markers -- the s=130 mean and inertial point in fig-verlet-coeff --
+    # keep their relative weight. Line and patch handles are left alone.
     for handle in legend.legend_handles:
-        if handle is not None:
-            handle.set_alpha(1.0)
+        if handle is None:
+            continue
+        handle.set_alpha(1.0)
+        if isinstance(handle, PathCollection):
+            sizes = handle.get_sizes()
+            if len(sizes) and sizes.max() < LEGEND_MARKER_FLOOR:
+                handle.set_sizes([LEGEND_MARKER_FLOOR])
+        elif isinstance(handle, Line2D) and handle.get_linestyle() != 'None':
+            if handle.get_linewidth() < LEGEND_LINE_FLOOR:
+                handle.set_linewidth(LEGEND_LINE_FLOOR)
 
 
 def plot_coefficient_plane(ax, coeffs):
