@@ -2,7 +2,7 @@
 <html xmlns="http://www.w3.org/1999/xhtml" lang="en" xml:lang="en"><head>
 
 <meta charset="utf-8">
-<meta name="generator" content="quarto-1.10.18">
+<meta name="generator" content="quarto-1.10.19">
 
 <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
 
@@ -71,7 +71,7 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <script src="../site_libs/quarto-search/fuse.min.js"></script>
 <script src="../site_libs/quarto-search/quarto-search.js"></script>
 <meta name="quarto:offset" content="../">
-<link href="../assets/logo_white.png" rel="icon" type="image/png">
+<link href="../site_libs/quarto-contrib/quarto-project/Arcadia-Science/arcadia-pub-theme/assets/logo_white.png" rel="icon" type="image/png">
 <script src="../site_libs/cookie-consent/cookie-consent.js"></script>
 <link href="../site_libs/cookie-consent/cookie-consent.css" rel="stylesheet">
 <script src="../site_libs/quarto-html/quarto.js" type="module"></script>
@@ -80,10 +80,10 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <script src="../site_libs/quarto-html/tippy.umd.min.js"></script>
 <script src="../site_libs/quarto-html/anchor.min.js"></script>
 <link href="../site_libs/quarto-html/tippy.css" rel="stylesheet">
-<link href="../site_libs/quarto-html/quarto-syntax-highlighting-64a204ab8560d761af7679ceaba22944.css" rel="stylesheet" id="quarto-text-highlighting-styles">
+<link href="../site_libs/quarto-html/quarto-syntax-highlighting-fa958a05ef27af128f5121dff2a700fa.css" rel="stylesheet" id="quarto-text-highlighting-styles">
 <script src="../site_libs/bootstrap/bootstrap.min.js"></script>
 <link href="../site_libs/bootstrap/bootstrap-icons.css" rel="stylesheet">
-<link href="../site_libs/bootstrap/bootstrap-b640e366d17e11f94019334348920489.min.css" rel="stylesheet" append-hash="true" id="quarto-bootstrap" data-mode="light">
+<link href="../site_libs/bootstrap/bootstrap-ffa396c9c5945dd0bd0b2d85098bba74.min.css" rel="stylesheet" append-hash="true" id="quarto-bootstrap" data-mode="light">
 <script src="../site_libs/quarto-contrib/iconify-3.0.0/iconify-icon.min.js"></script>
 <script id="quarto-search-options" type="application/json">{
   "location": "navbar",
@@ -112,14 +112,14 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
     "search-label": "Search"
   }
 }</script>
-<script async="" src="https://www.googletagmanager.com/gtag/js?id="></script>
+<script async="" src="https://www.googletagmanager.com/gtag/js?id=G-BZC77GSCFB"></script>
 
 <script type="text/plain" cookie-consent="tracking">
 
 window.dataLayer = window.dataLayer || [];
 function gtag(){dataLayer.push(arguments);}
 gtag('js', new Date());
-gtag('config', '', { 'anonymize_ip': true});
+gtag('config', 'G-BZC77GSCFB', { 'anonymize_ip': true});
 </script>
 
 <script type="text/javascript" charset="UTF-8">
@@ -139,7 +139,12 @@ cookieconsent.run({
 });
 </script> 
   
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin="">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible+Next:ital,wght@0,200;0,300;0,400;0,500;0,600;0,700;0,800;1,200;1,300;1,400;1,500;1,600;1,700;1,800&amp;family=Merriweather:ital,wght@0,300;0,400;0,700;0,900;1,300;1,400;1,700;1,900&amp;family=Chivo+Mono:ital,wght@0,100..900;1,100..900&amp;display=swap">
 <!-- logo-animation.html -->
+<!-- Hidden preload to ensure Quarto copies the video asset -->
+<link rel="preload" href="../site_libs/quarto-contrib/quarto-project/Arcadia-Science/arcadia-pub-theme/assets/logo_movie.mp4" as="video" type="video/mp4">
 <script>
   document.addEventListener("DOMContentLoaded", function () {
     const brandLink = document.querySelector(".navbar-brand");
@@ -156,7 +161,8 @@ cookieconsent.run({
     // Github Pages sites are served from a path like `https://arcadia-science.github.io/<repo>/`
     // so we need to add the repo name to the path when we're on Github Pages.
     const siteRoot = (window.location.hostname.endsWith('github.io')) ? `/${window.location.pathname.split('/')[1]}` : '';
-    source.src = `${siteRoot}/assets/logo_movie.mp4`;
+    const themeAssets = `${siteRoot}/site_libs/quarto-contrib/quarto-project/Arcadia-Science/arcadia-pub-theme/assets`;
+    source.src = `${themeAssets}/logo_movie.mp4`;
     source.type = "video/mp4";
     video.appendChild(source);
 
@@ -347,7 +353,7 @@ cookieconsent.run({
     <div class="mini-title-content">
       <div class="mini-title-logo-wrapper">
         <a href="https://research.arcadiascience.com/">
-          <img class="logo-white" src="/assets/logo_white.png" alt="Logo">
+          <img class="logo-white" src="" alt="Logo">
         </a>
       </div>
       <p></p>
@@ -367,7 +373,8 @@ cookieconsent.run({
     // Github Pages sites are served from a path like `https://arcadia-science.github.io/<repo>/`
     // so we need to add the repo name to the path when we're on Github Pages.
     const siteRoot = (window.location.hostname.endsWith('github.io')) ? `/${window.location.pathname.split('/')[1]}` : '';
-    template.content.querySelector('.logo-white').src = `${siteRoot}/assets/logo_white.png`;
+    const themeAssets = `${siteRoot}/site_libs/quarto-contrib/quarto-project/Arcadia-Science/arcadia-pub-theme/assets`;
+    template.content.querySelector('.logo-white').src = `${themeAssets}/logo_white.png`;
 
     let prevRatio = {appear: 1, disappear: 1};
 
@@ -515,9 +522,227 @@ cookieconsent.run({
     }
   });
 </script>
+<!-- TODO: This solution currently generates the bibtex on the fly using a regex pattern. Ideally, the bibtex is a static file in the repository, similar to CITATION.cff. -->
+<template id="citation-box-template">
+  <div id="citation-popup" class="citation-popup">
+    <div class="citation-popup-content">
+      <div class="citation-header">
+        <h4>Cite this pub</h4>
+        <button id="close-citation-box" class="close-button" aria-label="Close citation box">×</button>
+      </div>
+      <div class="citation-tabs">
+        <button class="citation-tab-button active" data-format="styled">Arcadia</button>
+        <button class="citation-tab-button" data-format="bibtex">BibTeX</button>
+      </div>
+      <div class="citation-body">
+        <div id="styled-citation" class="citation-content active">
+          <p class="loading-text">Loading citation...</p>
+        </div>
+        <div id="bibtex-citation" class="citation-content">
+          <pre class="loading-text">Loading citation...</pre>
+        </div>
+      </div>
+      <div class="citation-footer">
+        <button id="copy-citation-button" class="copy-button">
+          <i class="bi bi-clipboard"></i> Copy to clipboard
+        </button>
+      </div>
+    </div>
+  </div>
+</template>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/require.js/2.3.6/require.min.js"></script>
+<script>
+  // Initialize citation functionality after DOM is ready
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', initCitationBox);
+  } else {
+    initCitationBox();
+  }
+
+  function initCitationBox() {
+    require.config({
+      paths: {
+        'js-yaml': 'https://cdnjs.cloudflare.com/ajax/libs/js-yaml/4.1.0/js-yaml.min'
+      }
+    });
+
+    require(['js-yaml'], function (jsyaml) {
+
+      // Add citation box template to the document
+      const template = document.getElementById('citation-box-template');
+      const citationBoxContent = document.importNode(template.content, true);
+      document.body.appendChild(citationBoxContent);
+
+      // Find citation button
+      const navLinks = document.querySelectorAll('.navbar-nav .nav-link');
+      let citeButton = null;
+      for (const link of navLinks) {
+        if (link.textContent && link.textContent.trim() === 'Cite this pub') {
+          citeButton = link;
+          break;
+        }
+      }
+
+      // Reference elements (assuming they exist in the template)
+      const citationPopup = document.getElementById('citation-popup');
+      const closeButton = document.getElementById('close-citation-box');
+      const copyButton = document.getElementById('copy-citation-button');
+      const tabButtons = document.querySelectorAll('.citation-tab-button');
+      const styledEl = document.getElementById('styled-citation');
+      const bibtexEl = document.getElementById('bibtex-citation');
+
+      let pubData = {};
+      let isDataLoaded = false;
+
+      // --- Function to load the citation data ---
+      async function loadCitationData() {
+        // Set loading text (will be replaced on success)
+        styledEl.innerHTML = `<p class="loading-text">Loading citation...</p>`;
+        bibtexEl.innerHTML = `<pre class="loading-text">Loading citation...</pre>`;
+
+        // Fetch and parse CFF
+        const siteRoot = (window.location.hostname.endsWith('github.io')) ? `/${window.location.pathname.split('/')[1]}` : '';
+        const citationCffPath = `${siteRoot}/CITATION.cff`;
+        const response = await fetch(citationCffPath);
+        const text = await response.text();
+        const cffData = jsyaml.load(text);
+
+        const preferredCitation = cffData['preferred-citation'];
+        const title = preferredCitation.title;
+        const year = preferredCitation.year;
+        const doi = preferredCitation.doi;
+        const authors = preferredCitation.authors;
+
+        pubData = {
+          title: String(title).trim(),
+          year: String(year).trim(),
+          doi: String(doi).trim(),
+          authors: []
+        };
+
+        for (const author of authors) {
+          pubData.authors.push({
+            family: String(author['family-names']).trim(),
+            given: String(author['given-names']).trim()
+          });
+        }
+
+        updateCitations();
+        isDataLoaded = true;
+      }
+
+      function updateCitations() {
+        const url = pubData.doi ? `https://doi.org/${pubData.doi}` : window.location.href;
+
+        // Text citation
+        const styledAuthors = pubData.authors.map(author => {
+          const initials = author.given.split(/\s+/).map(name => name.charAt(0)).join('');
+          return `${author.family} ${initials}`;
+        }).join(', ');
+        styledEl.innerHTML = `<p>${styledAuthors}. (${pubData.year}). ${pubData.title}. ${url}</p>`;
+
+        // BibTeX citation
+        const firstAuthor = pubData.authors[0]; // Assume at least one author
+        const bibtexKey = `${firstAuthor.family.replace(/[^a-zA-Z0-9]/g, '')}${pubData.year}${pubData.title.split(' ')[0].replace(/[^a-zA-Z0-9]/g, '')}`;
+        const escapedTitle = pubData.title.replace(/([{}])/g, '\\$1');
+        const titleWithCaps = escapedTitle.replace(/\b([A-Z][a-zA-Z0-9'-]*)\b/g, '{$1}');
+        const bibtexAuthors = pubData.authors.map(author => `${author.family}, ${author.given}`).join(' and ');
+
+        const bibtexContentFinal = `@article{${bibtexKey},
+    author = {${bibtexAuthors}},
+    title = {${titleWithCaps}},
+    journal = {Arcadia Science},
+    year = {${pubData.year}},${pubData.doi ? `\n    doi = {${pubData.doi}},` : ''}
+    url = {${url}}
+}`;
+        bibtexEl.innerHTML = `<pre>${bibtexContentFinal}</pre>`;
+      }
+
+      // --- Function to toggle the citation box ---
+      function toggleCitationBox() {
+        const isVisible = citationPopup.classList.contains('visible');
+        if (!isVisible) {
+          citationPopup.classList.add('visible');
+          // Load data only once on first open
+          if (!isDataLoaded) {
+            loadCitationData(); // Assuming this will succeed
+          }
+        } else {
+          citationPopup.classList.remove('visible');
+        }
+      }
+
+      // --- Event listeners ---
+      citeButton.addEventListener('click', function (e) {
+        e.preventDefault();
+        toggleCitationBox();
+      });
+
+      closeButton.addEventListener('click', function () {
+        citationPopup.classList.remove('visible');
+      });
+
+      // Tab switching
+      tabButtons.forEach(button => {
+        button.addEventListener('click', function () {
+          tabButtons.forEach(btn => btn.classList.remove('active'));
+          this.classList.add('active');
+          document.querySelectorAll('.citation-content').forEach(content => {
+            content.classList.remove('active');
+          });
+          const format = this.getAttribute('data-format');
+          document.getElementById(`${format}-citation`).classList.add('active');
+        });
+      });
+
+      // Copy to clipboard functionality
+      copyButton.addEventListener('click', function () {
+        const activeTab = document.querySelector('.citation-tab-button.active');
+        const activeFormat = activeTab.getAttribute('data-format');
+        const contentEl = document.getElementById(`${activeFormat}-citation`);
+
+        let textToCopy = '';
+        if (activeFormat === 'bibtex') {
+          textToCopy = contentEl.querySelector('pre').textContent.trim();
+        } else {
+          textToCopy = contentEl.querySelector('p').textContent.trim();
+        }
+
+        navigator.clipboard.writeText(textToCopy)
+          .then(() => {
+            copyButton.innerHTML = '<i class="bi bi-check-lg"></i> Copied!';
+            setTimeout(() => {
+              copyButton.innerHTML = '<i class="bi bi-clipboard"></i> Copy to clipboard';
+            }, 2000);
+          })
+          .catch(err => {
+            console.error('Failed to copy text to clipboard: ', err);
+            copyButton.innerHTML = '<i class="bi bi-x-lg"></i> Failed';
+            setTimeout(() => {
+              copyButton.innerHTML = '<i class="bi bi-clipboard"></i> Copy to clipboard';
+            }, 2000);
+          });
+      });
+
+      // Close on escape key
+      document.addEventListener('keydown', function (event) {
+        if (event.key === 'Escape') {
+          if (citationPopup && citationPopup.classList.contains('visible')) {
+            citationPopup.classList.remove('visible');
+          }
+        }
+      });
+
+    });
+  }
+
+</script>
 
 
-<link rel="stylesheet" href="../assets/css/main.css">
+<link rel="stylesheet" href="../site_libs/quarto-contrib/quarto-project/Arcadia-Science/arcadia-pub-theme/css/main.css">
+<link rel="stylesheet" href="../site_libs/quarto-contrib/quarto-project/Arcadia-Science/arcadia-pub-theme/css/citation-box.css">
+<link rel="stylesheet" href="../site_libs/quarto-contrib/quarto-project/Arcadia-Science/arcadia-pub-theme/css/additional-assets.css">
 
 
 
@@ -528,8 +753,8 @@ cookieconsent.run({
       <div class="navbar-container container-fluid">
       <div class="navbar-brand-container mx-auto">
     <a href="https://research.arcadiascience.com/" class="navbar-brand navbar-brand-logo">
-    <img src="../assets/logo_text.png" alt="" class="navbar-logo light-content">
-    <img src="../assets/logo_text.png" alt="" class="navbar-logo dark-content">
+    <img src="../site_libs/quarto-contrib/quarto-project/Arcadia-Science/arcadia-pub-theme/assets/logo_text.png" alt="" class="navbar-logo light-content">
+    <img src="../site_libs/quarto-contrib/quarto-project/Arcadia-Science/arcadia-pub-theme/assets/logo_text.png" alt="" class="navbar-logo dark-content">
     </a>
   </div>
             <div id="quarto-search" class="" title="Search"></div>
@@ -545,17 +770,13 @@ cookieconsent.run({
     <ul class="dropdown-menu" aria-labelledby="nav-menu-iconify-qlementine-iconsversion-control-16-">    
         <li>
     <a class="dropdown-item" href="../index.html">
- <span class="dropdown-text">v01 (latest)</span></a>
+ <span class="dropdown-text">v1.0 (latest)</span></a>
   </li>  
     </ul>
   </li>
   <li class="nav-item">
     <a class="nav-link" href="../index.html"> 
 <span class="menu-text"><iconify-icon role="img" inline="" icon="nrk:back" aria-label="Icon back from nrk Iconify.design set." title="Icon back from nrk Iconify.design set."></iconify-icon> Back to Pub</span></a>
-  </li>  
-  <li class="nav-item">
-    <a class="nav-link" href="../examples/demo.html"> 
-<span class="menu-text">Demo</span></a>
   </li>  
 </ul>
             <ul class="navbar-nav navbar-nav-scroll ms-auto">
@@ -568,6 +789,10 @@ cookieconsent.run({
 <span class="menu-text">Reproduce this pub</span></a>
   </li>  
   <li class="nav-item">
+    <a class="nav-link" href="../#"> 
+<span class="menu-text">Cite this pub</span></a>
+  </li>  
+  <li class="nav-item">
     <a class="nav-link" href="../pages/CONTRIBUTING.html"> 
 <span class="menu-text">Contribute</span></a>
   </li>  
@@ -575,7 +800,7 @@ cookieconsent.run({
           </div> <!-- /navcollapse -->
             <div class="quarto-navbar-tools">
     <a href="https://twitter.com/arcadiascience" title="" class="quarto-navigation-tool px-1" aria-label=""><i class="bi bi-twitter-x"></i></a>
-    <a href="https://github.com/Arcadia-Science/notebook-pub-template" title="" class="quarto-navigation-tool px-1" aria-label=""><i class="bi bi-github"></i></a>
+    <a href="https://github.com/Arcadia-Science/world-model-orbits" title="" class="quarto-navigation-tool px-1" aria-label=""><i class="bi bi-github"></i></a>
 </div>
       </div> <!-- /container-fluid -->
     </nav>
@@ -614,10 +839,10 @@ cookieconsent.run({
 <p>This document details how to create a local copy of this pub’s codebase, setup your compute environment, and reproduce the pub itself. This will enable you to experiment with the analysis in the pub and, optionally, contribute revisions to it.</p>
 <section id="obtain-local-copy" class="level2">
 <h2 class="anchored" data-anchor-id="obtain-local-copy">Obtain local copy</h2>
-<p>The codebase is hosted on GitHub and can be found <a href="https://github.com/Arcadia-Science/notebook-pub-template">here</a>.</p>
+<p>The codebase is hosted on GitHub and can be found <a href="https://github.com/Arcadia-Science/world-model-orbits">here</a>.</p>
 <p>To obtain a local copy of this repo, you can either <em>clone</em> it directly or fork it to your own GitHub account, then clone your fork. If you aren’t sure what’s best, our suggestion is to clone directly unless you both (1) want to propose a revision for the publication and (2) are not an employee of Arcadia Science.</p>
 <p>To clone:</p>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb1"><pre class="sourceCode bash code-with-copy"><code class="sourceCode bash"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="fu">git</span> clone https://github.com/Arcadia-Science/notebook-pub-template.git</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb1"><pre class="sourceCode bash code-with-copy"><code class="sourceCode bash"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="fu">git</span> clone https://github.com/Arcadia-Science/world-model-orbits.git</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 </section>
 <section id="installation" class="level2">
 <h2 class="anchored" data-anchor-id="installation">Installation</h2>
@@ -635,8 +860,8 @@ Important
 </div>
 </div>
 <p>This repository uses conda to manage the computational and build environment. If you don’t have it installed (check with <code>conda --version</code>), you can find operating system-specific instructions for installing miniconda <a href="https://docs.conda.io/projects/miniconda/en/latest/">here</a>. After installing, run the following commands to create and activate the environment.</p>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb2"><pre class="sourceCode bash code-with-copy"><code class="sourceCode bash"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a><span class="ex">conda</span> env create <span class="at">-n</span> notebook-pub-template <span class="at">--file</span> env.yml</span>
-<span id="cb2-2"><a href="#cb2-2" aria-hidden="true" tabindex="-1"></a><span class="ex">conda</span> activate notebook-pub-template</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb2"><pre class="sourceCode bash code-with-copy"><code class="sourceCode bash"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a><span class="ex">conda</span> env create <span class="at">-n</span> world-model-orbits <span class="at">--file</span> env.yml</span>
+<span id="cb2-2"><a href="#cb2-2" aria-hidden="true" tabindex="-1"></a><span class="ex">conda</span> activate world-model-orbits</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <p>Now, install any internal packages in the repository:</p>
 <div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb3"><pre class="sourceCode bash code-with-copy"><code class="sourceCode bash"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a><span class="ex">pip</span> install <span class="at">-e</span> .</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <p>And finally, if you plan to submit a pull request, install the <a href="https://pre-commit.com/">pre-commit</a> hooks:</p>
@@ -648,11 +873,14 @@ Important
 <p>With a copy of the code and compute environment set up on your local machine, you can now reproduce or modify a local copy of the publication however you see fit. Read on to get started.</p>
 <section id="reproduce" class="level2">
 <h2 class="anchored" data-anchor-id="reproduce">Reproduce</h2>
-<p>The best way to ensure you’ve correctly set up your code and compute environment is to reproduce this work. Fortunately, the analysis, and therefore the publication itself, can be reproduced with the following command:</p>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb5"><pre class="sourceCode bash code-with-copy"><code class="sourceCode bash"><span id="cb5-1"><a href="#cb5-1" aria-hidden="true" tabindex="-1"></a><span class="fu">make</span> execute</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p>The best way to ensure you’ve correctly set up your code and compute environment is to reproduce this work.</p>
+<p>First regenerate the input data:</p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb5"><pre class="sourceCode bash code-with-copy"><code class="sourceCode bash"><span id="cb5-1"><a href="#cb5-1" aria-hidden="true" tabindex="-1"></a><span class="ex">python</span> <span class="at">-m</span> analysis.data_generation</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p>Then, the analysis, and therefore the publication itself, can be reproduced with the following command:</p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb6"><pre class="sourceCode bash code-with-copy"><code class="sourceCode bash"><span id="cb6-1"><a href="#cb6-1" aria-hidden="true" tabindex="-1"></a><span class="fu">make</span> execute</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <p>(Make sure you’re in the conda environment you created above)</p>
 <p>This will execute and render the notebook <code>index.ipynb</code>, then build the publication site. To preview the site, use</p>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb6"><pre class="sourceCode bash code-with-copy"><code class="sourceCode bash"><span id="cb6-1"><a href="#cb6-1" aria-hidden="true" tabindex="-1"></a><span class="fu">make</span> preview</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb7"><pre class="sourceCode bash code-with-copy"><code class="sourceCode bash"><span id="cb7-1"><a href="#cb7-1" aria-hidden="true" tabindex="-1"></a><span class="fu">make</span> preview</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <p>This will open a local instance of the publication in your default browser.</p>
 </section>
 <section id="modify" class="level2">
@@ -741,7 +969,7 @@ Important
     }
       var localhostRegex = new RegExp(/^(?:http|https):\/\/localhost\:?[0-9]*\//);
       var mailtoRegex = new RegExp(/^mailto:/);
-        var filterRegex = new RegExp("https:\/\/Arcadia-Science\.github\.io\/2026-world-model-orbits\/");
+        var filterRegex = new RegExp("https:\/\/Arcadia-Science\.github\.io\/world-model-orbits\/");
       var isInternal = (href) => {
           return filterRegex.test(href) || localhostRegex.test(href) || mailtoRegex.test(href);
       }
@@ -1111,7 +1339,7 @@ Important
 <footer class="footer">
   <div class="nav-footer">
     <div class="nav-footer-left">
-<p><a href="https://www.arcadiascience.com/"><img src="../assets/logo_white.png" class="img-fluid" alt="Arcadia-Science" width="65"></a> Copyright 2025, Arcadia Science</p>
+<p><a href="https://www.arcadiascience.com/"><img src="../site_libs/quarto-contrib/quarto-project/Arcadia-Science/arcadia-pub-theme/assets/logo_white.png" class="img-fluid" alt="Arcadia-Science" width="65"></a> Copyright 2026, Arcadia Science</p>
 </div>   
     <div class="nav-footer-center">
 
